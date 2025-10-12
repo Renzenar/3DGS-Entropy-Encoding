@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "crates/gaussian_parser",
+    "crates/*", 
+    "pipeline/compression_pipeline",
 ]
 resolver = "2"
 

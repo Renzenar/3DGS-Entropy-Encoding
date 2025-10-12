@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "compression_pipeline"
+version = "0.1.0"
+dependencies = [
+ "gaussian_parser",
+]
+
+[[package]]
 name = "gaussian_parser"
 version = "0.1.0"
