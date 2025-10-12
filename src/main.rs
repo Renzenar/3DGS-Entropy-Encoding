@@ -1,5 +1,13 @@
-//This is not code yet
-//
-//I need to edit this
-//
-let : <u8> var;
+use gaussian_parser::load_gaussians_from_ply;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let scene = load_gaussians_from_ply("path/to/kerbl_scene.ply")?;
+    println!("Loaded {} Gaussians", scene.gaussians.len());
+
+    // Example: inspect the first Gaussian
+    if let Some(g) = scene.gaussians.first() {
+        println!("xyz={:?}, opacity={}, scale={:?}, rot={:?}", g.xyz, g.opacity, g.scale, g.rot);
+        println!("sh_rest_len={}", g.sh_rest.len());
+    }
+    Ok(())
+}

@@ -1,7 +1,5 @@
-//! eparser: Kerbl-style 3DGS PLY parser (binary LE + ASCII fallback), no deps.
-//!
-//! Schema (Kerbl):
-//! x y z | (optional) nx ny nz | f_dc_0..2 | f_rest_0..44 | opacity | scale_0..2 | rot_0..3
+//! eparser: Kerbl-style 3DGS PLY parser (binary LE + ASCII), no deps.
+//! Returns an array of `Gaussian`, each with its own fields.
 
 use std::collections::HashMap;
 use std::error::Error as StdError;
@@ -9,27 +7,36 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 
+/// One Gaussian (per-vertex) record.
 #[derive(Debug, Clone)]
-pub struct Gaussians {
-    pub xyz: Vec<[f32; 3]>,
-    pub normals: Option<Vec<[f32; 3]>>,
-    pub sh_dc: Vec<[f32; 3]>,
-    pub sh_rest: Vec<Vec<f32>>, // uniform length per point (e.g., 45)
-    pub opacity: Vec<f32>,
-    pub scale: Vec<[f32; 3]>,   // log-scales
-    pub rot: Vec<[f32; 4]>,     // quaternion xyzw (normalized)
+pub struct Gaussian {
+    pub xyz: [f32; 3],
+    pub normals: Option<[f32; 3]>,
+    pub sh_dc: [f32; 3],
+    pub sh_rest: Vec<f32>,     // e.g., 45 for Kerbl (L=3 per color)
+    pub opacity: f32,
+    pub scale: [f32; 3],       // log-scales
+    pub rot: [f32; 4],         // quaternion xyzw (normalized)
+}
+
+/// Full scene: array of Gaussians + some metadata.
+#[derive(Debug, Clone)]
+pub struct Scene {
+    pub gaussians: Vec<Gaussian>,
     pub meta: HashMap<String, String>,
 }
 
+/// Errors for PLY parsing. All message-carrying variants own their String to avoid `'static` lifetimes.
 #[derive(Debug)]
 pub enum PlyError {
     Io(io::Error),
-    Header(&'static str),
+    Header(String),
     Eof,
-    MissingProp(&'static str),
+    MissingProp(String),
     UnsupportedFormat(String),
     BadNumber,
 }
+
 impl Display for PlyError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -49,6 +56,10 @@ impl StdError for PlyError {
 }
 impl From<io::Error> for PlyError { fn from(e: io::Error) -> Self { PlyError::Io(e) } }
 
+// Small helpers to build string-carrying errors concisely
+fn header<S: Into<String>>(s: S) -> PlyError { PlyError::Header(s.into()) }
+fn missing<S: Into<String>>(s: S) -> PlyError { PlyError::MissingProp(s.into()) }
+
 #[derive(Debug)]
 struct PlyMeta {
     format: PlyFormat,
@@ -56,8 +67,10 @@ struct PlyMeta {
     properties: Vec<(String, String)>, // (name, dtype)
     header_len: u64,
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PlyFormat { BinaryLittleEndian, Ascii }
+
 impl PlyFormat {
     fn from_header_line(line: &str) -> Result<Self, PlyError> {
         if line.contains("binary_little_endian") { Ok(Self::BinaryLittleEndian) }
@@ -66,12 +79,13 @@ impl PlyFormat {
     }
 }
 
-/// Load a Kerbl-style 3DGS PLY file.
-pub fn load_gaussians_from_ply(path: &str) -> Result<Gaussians, PlyError> {
+/// Load a Kerbl-style 3DGS PLY file, returning an array of `Gaussian`s.
+pub fn load_gaussians_from_ply(path: &str) -> Result<Scene, PlyError> {
     let file = File::open(path)?;
     let mut br = BufReader::new(file);
     let meta = parse_header(&mut br)?;
 
+    // Read vertex rows as Vec<Vec<f32>> aligned with meta.properties.
     let rows: Vec<Vec<f32>> = match meta.format {
         PlyFormat::BinaryLittleEndian => {
             let mut f = br.into_inner();
@@ -81,48 +95,38 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Gaussians, PlyError> {
     };
     let names: Vec<String> = meta.properties.iter().map(|(n, _)| n.clone()).collect();
 
-    // Required xyz
-    let x = grab_col(&names, &rows, &["x"])?;
-    let y = grab_col(&names, &rows, &["y"])?;
-    let z = grab_col(&names, &rows, &["z"])?;
-    let mut xyz = Vec::with_capacity(rows.len());
-    for i in 0..rows.len() { xyz.push([x[i], y[i], z[i]]); }
+    // Indices for required/optional fields (by name).
+    let i_x = idx(&names, "x")?;
+    let i_y = idx(&names, "y")?;
+    let i_z = idx(&names, "z")?;
 
-    // Optional normals
-    let normals = grab_triple_optional(&names, &rows, "nx", "ny", "nz");
+    let i_opacity = idx_any(&names, &["opacity", "alpha"])?;
 
-    // opacity
-    let opacity = grab_col(&names, &rows, &["opacity", "alpha"])?;
+    // normals optional
+    let i_nx = names.iter().position(|n| n == "nx");
+    let i_ny = names.iter().position(|n| n == "ny");
+    let i_nz = names.iter().position(|n| n == "nz");
+    let normals_present = i_nx.is_some() && i_ny.is_some() && i_nz.is_some();
 
-    // scale_0..2
-    let scale = grab_prefix_triple(&names, &rows, &["scale_", "scale", "s", "sc"])?;
+    // scale_0..2 (accept "scale_0" or "scale0")
+    let [i_s0, i_s1, i_s2] = prefix_triple(&names, &["scale_", "scale", "s", "sc"])?;
 
-    // rot_0..3 or qx..qw
-    let rot = if ["rot_0","rot_1","rot_2","rot_3"].iter().all(|k| names.contains(&k.to_string())) {
-        let i0 = idx(&names, "rot_0")?; let i1 = idx(&names, "rot_1")?;
-        let i2 = idx(&names, "rot_2")?; let i3 = idx(&names, "rot_3")?;
-        rows.iter().map(|r| [r[i0], r[i1], r[i2], r[i3]]).collect()
+    // quaternion: rot_0..3 or qx,qy,qz,qw
+    let (i_qx, i_qy, i_qz, i_qw) = if ["rot_0","rot_1","rot_2","rot_3"].iter().all(|k| names.contains(&k.to_string())) {
+        (idx(&names, "rot_0")?, idx(&names, "rot_1")?, idx(&names, "rot_2")?, idx(&names, "rot_3")?)
     } else if ["qx","qy","qz","qw"].iter().all(|k| names.contains(&k.to_string())) {
-        let ix = idx(&names, "qx")?; let iy = idx(&names, "qy")?;
-        let iz = idx(&names, "qz")?; let iw = idx(&names, "qw")?;
-        rows.iter().map(|r| [r[ix], r[iy], r[iz], r[iw]]).collect()
+        (idx(&names, "qx")?, idx(&names, "qy")?, idx(&names, "qz")?, idx(&names, "qw")?)
     } else {
-        return Err(PlyError::MissingProp("rot quaternion"));
+        return Err(missing("rot quaternion"));
     };
-    let rot: Vec<[f32; 4]> = rot.into_iter().map(|q| {
-        let n = (q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]).sqrt().max(1e-8);
-        [q[0]/n, q[1]/n, q[2]/n, q[3]/n]
-    }).collect();
 
     // SH DC
-    let dc0 = grab_col(&names, &rows, &["f_dc_0","sh_dc_0","dc_0"])?;
-    let dc1 = grab_col(&names, &rows, &["f_dc_1","sh_dc_1","dc_1"])?;
-    let dc2 = grab_col(&names, &rows, &["f_dc_2","sh_dc_2","dc_2"])?;
-    let mut sh_dc = Vec::with_capacity(rows.len());
-    for i in 0..rows.len() { sh_dc.push([dc0[i], dc1[i], dc2[i]]); }
+    let i_dc0 = idx_any(&names, &["f_dc_0","sh_dc_0","dc_0"])?;
+    let i_dc1 = idx_any(&names, &["f_dc_1","sh_dc_1","dc_1"])?;
+    let i_dc2 = idx_any(&names, &["f_dc_2","sh_dc_2","dc_2"])?;
 
-    // SH rest (prefer f_rest_*)
-    let mut rest_cols: Vec<(usize, usize)> = Vec::new();
+    // SH rest indices (prefer f_rest_*)
+    let mut rest_cols: Vec<(usize, usize)> = Vec::new(); // (col_index, order)
     for (i, n) in names.iter().enumerate() {
         if let Some(sfx) = n.strip_prefix("f_rest_")
             .or_else(|| n.strip_prefix("sh_rest_"))
@@ -131,10 +135,9 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Gaussians, PlyError> {
         }
     }
     rest_cols.sort_by_key(|&(_, k)| k);
-    let sh_rest: Vec<Vec<f32>> = if !rest_cols.is_empty() {
-        rows.iter().map(|r| rest_cols.iter().map(|(i, _)| r[*i]).collect()).collect()
-    } else {
-        // fallback: f_0.., first 3 are DC
+
+    // Fallback: f_0.. (first 3 are DC)
+    let fallback_rest: Option<Vec<usize>> = if rest_cols.is_empty() {
         let mut fcols: Vec<(usize, usize)> = Vec::new();
         for (i, n) in names.iter().enumerate() {
             if let Some(k) = n.strip_prefix("f_")
@@ -145,12 +148,40 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Gaussians, PlyError> {
         }
         fcols.sort_by_key(|&(_, k)| k);
         if fcols.len() >= 3 {
-            let rest_idxs: Vec<usize> = fcols.into_iter().filter(|&(_, k)| k >= 3).map(|(i, _)| i).collect();
-            rows.iter().map(|r| rest_idxs.iter().map(|i| r[*i]).collect()).collect()
+            Some(fcols.into_iter().filter(|&(_, k)| k >= 3).map(|(i, _)| i).collect())
+        } else { None }
+    } else { None };
+
+    // Build array-of-structs
+    let mut gaussians = Vec::with_capacity(rows.len());
+    for r in &rows {
+        let xyz = [r[i_x], r[i_y], r[i_z]];
+        let normals = if normals_present {
+            Some([r[i_nx.unwrap()], r[i_ny.unwrap()], r[i_nz.unwrap()]])
         } else {
-            vec![Vec::new(); rows.len()]
-        }
-    };
+            None
+        };
+        let sh_dc = [r[i_dc0], r[i_dc1], r[i_dc2]];
+
+        let sh_rest: Vec<f32> = if !rest_cols.is_empty() {
+            rest_cols.iter().map(|(i, _)| r[*i]).collect()
+        } else if let Some(idxv) = &fallback_rest {
+            idxv.iter().map(|i| r[*i]).collect()
+        } else {
+            Vec::new()
+        };
+
+        let opacity = r[i_opacity];
+
+        let scale = [r[i_s0], r[i_s1], r[i_s2]];
+
+        // normalize quaternion
+        let mut rot = [r[i_qx], r[i_qy], r[i_qz], r[i_qw]];
+        let n = (rot[0]*rot[0] + rot[1]*rot[1] + rot[2]*rot[2] + rot[3]*rot[3]).sqrt().max(1e-8);
+        rot[0] /= n; rot[1] /= n; rot[2] /= n; rot[3] /= n;
+
+        gaussians.push(Gaussian { xyz, normals, sh_dc, sh_rest, opacity, scale, rot });
+    }
 
     let mut meta_map = HashMap::new();
     meta_map.insert(
@@ -159,50 +190,54 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Gaussians, PlyError> {
     );
     meta_map.insert("vertex_count".into(), meta.vertex_count.to_string());
 
-    Ok(Gaussians { xyz, normals, sh_dc, sh_rest, opacity, scale, rot, meta: meta_map })
+    Ok(Scene { gaussians, meta: meta_map })
 }
 
 // ---------------- internal helpers ----------------
 
 fn parse_header(r: &mut BufReader<File>) -> Result<PlyMeta, PlyError> {
     let mut header_len: u64 = 0;
-    let mut header: Vec<String> = Vec::new();
+    let mut header_vec: Vec<String> = Vec::new();
     loop {
         let mut line = String::new();
         let n = r.read_line(&mut line)?;
-        if n == 0 { return Err(PlyError::Header("EOF in header")); }
+        if n == 0 { return Err(header("EOF in header")); }
         header_len += n as u64;
         let trimmed = line.trim_end().to_string();
-        if header.is_empty() && !trimmed.starts_with("ply") { return Err(PlyError::Header("missing 'ply' signature")); }
-        header.push(trimmed);
-        if header.last().unwrap() == "end_header" { break; }
+        if header_vec.is_empty() && !trimmed.starts_with("ply") {
+            return Err(header("missing 'ply' signature"));
+        }
+        header_vec.push(trimmed);
+        if header_vec.last().unwrap() == "end_header" { break; }
     }
-    let fmt_line = header.iter().find(|l| l.starts_with("format ")).ok_or(PlyError::Header("missing 'format'"))?;
+    let fmt_line = header_vec.iter().find(|l| l.starts_with("format "))
+        .ok_or_else(|| header("missing 'format'"))?;
     let format = PlyFormat::from_header_line(fmt_line)?;
 
     let mut vertex_count: Option<usize> = None;
     let mut in_vertex = false;
     let mut properties: Vec<(String, String)> = Vec::new();
-    for l in &header {
+    for l in &header_vec {
         if l.starts_with("element ") {
             in_vertex = l.starts_with("element vertex");
             if in_vertex {
                 let parts: Vec<&str> = l.split_whitespace().collect();
-                let count = parts.last().ok_or(PlyError::Header("bad 'element vertex'"))?
-                    .parse::<usize>().map_err(|_| PlyError::Header("bad vertex count"))?;
+                let count = parts.last()
+                    .ok_or_else(|| header("bad 'element vertex'"))?
+                    .parse::<usize>().map_err(|_| header("bad vertex count"))?;
                 vertex_count = Some(count);
             }
         } else if in_vertex && l.starts_with("property ") {
             let parts: Vec<&str> = l.split_whitespace().collect();
             if parts.get(1) == Some(&"list") { continue; } // skip lists
-            let dtype = parts.get(1).ok_or(PlyError::Header("bad property dtype"))?;
-            let name  = parts.get(2).ok_or(PlyError::Header("bad property name"))?;
+            let dtype = parts.get(1).ok_or_else(|| header("bad property dtype"))?;
+            let name  = parts.get(2).ok_or_else(|| header("bad property name"))?;
             properties.push(((*name).to_string(), (*dtype).to_string()));
         }
     }
     Ok(PlyMeta {
         format,
-        vertex_count: vertex_count.ok_or(PlyError::Header("no vertex element"))?,
+        vertex_count: vertex_count.ok_or_else(|| header("no vertex element"))?,
         properties,
         header_len,
     })
@@ -264,57 +299,35 @@ fn read_vertices_ascii(reader: &mut BufReader<File>, meta: &PlyMeta) -> Result<V
 }
 
 fn idx(names: &[String], needle: &str) -> Result<usize, PlyError> {
-    names.iter().position(|n| n == needle).ok_or(PlyError::MissingProp(needle))
+    names.iter().position(|n| n == needle).ok_or_else(|| missing(needle))
 }
 
-fn grab_col(names: &[String], rows: &[Vec<f32>], candidates: &[&str]) -> Result<Vec<f32>, PlyError> {
+fn idx_any(names: &[String], candidates: &[&str]) -> Result<usize, PlyError> {
     for c in candidates {
-        if let Some(i) = names.iter().position(|n| n == c) {
-            return Ok(rows.iter().map(|r| r[i]).collect());
+        if let Some(i) = names.iter().position(|n| n == *c) {
+            return Ok(i);
         }
     }
-    Err(PlyError::MissingProp(candidates.first().copied().unwrap_or("column")))
+    let msg = if !candidates.is_empty() {
+        format!("one of [{}]", candidates.join(", "))
+    } else {
+        "column".to_string()
+    };
+    Err(missing(msg))
 }
 
-fn grab_triple_optional(
-    names: &[String],
-    rows: &[Vec<f32>],
-    a: &str, b: &str, c: &str
-) -> Option<Vec<[f32; 3]>> {
-    let (ia, ib, ic) = (
-        names.iter().position(|n| n == a),
-        names.iter().position(|n| n == b),
-        names.iter().position(|n| n == c),
-    );
-    match (ia, ib, ic) {
-        (Some(ia), Some(ib), Some(ic)) => {
-            let mut out = Vec::with_capacity(rows.len());
-            for r in rows { out.push([r[ia], r[ib], r[ic]]); }
-            Some(out)
-        }
-        _ => None,
-    }
-}
-
-fn grab_prefix_triple(
-    names: &[String],
-    rows: &[Vec<f32>],
-    prefixes: &[&str],
-) -> Result<Vec<[f32; 3]>, PlyError> {
+fn prefix_triple(names: &[String], prefixes: &[&str]) -> Result<[usize;3], PlyError> {
     for pref in prefixes {
-        let form1 = |i: usize| format!("{pref}{i}");
+        let f1 = |i: usize| format!("{pref}{i}");
         let base = pref.trim_end_matches('_');
-        let form2 = |i: usize| format!("{base}_{i}");
+        let f2 = |i: usize| format!("{base}_{i}");
         let mut idxs: [Option<usize>; 3] = [None, None, None];
-        for i in 0..3 { idxs[i] = names.iter().position(|n| n == &form1(i) || n == &form2(i)); }
+        for i in 0..3 { idxs[i] = names.iter().position(|n| n == &f1(i) || n == &f2(i)); }
         if idxs.iter().all(|o| o.is_some()) {
-            let (i0, i1, i2) = (idxs[0].unwrap(), idxs[1].unwrap(), idxs[2].unwrap());
-            let mut out = Vec::with_capacity(rows.len());
-            for r in rows { out.push([r[i0], r[i1], r[i2]]); }
-            return Ok(out);
+            return Ok([idxs[0].unwrap(), idxs[1].unwrap(), idxs[2].unwrap()]);
         }
     }
-    Err(PlyError::MissingProp("scale_0..2"))
+    Err(missing("scale_0..2"))
 }
 
 #[cfg(test)]
@@ -322,9 +335,10 @@ mod tests {
     use super::*;
     #[test]
     fn quaternion_normalization() {
-        let q = [0.0f32, 0.0, 0.0, 10.0];
-        let n = (q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]).sqrt().max(1e-8);
-        let qn = [q[0]/n, q[1]/n, q[2]/n, q[3]/n];
-        assert!((qn[3] - 1.0).abs() < 1e-6);
+        let mut q = [0.2f32, -0.3, 0.4, 0.5];
+        let n = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt().max(1e-8);
+        q[0]/=n; q[1]/=n; q[2]/=n; q[3]/=n;
+        let one = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]);
+        assert!((one - 1.0).abs() < 1e-5);
     }
 }
