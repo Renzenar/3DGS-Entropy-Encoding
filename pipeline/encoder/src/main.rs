@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loaded {} Gaussians", scene.gaussians.len());
 
     // Example: inspect the first Gaussian
-    if let Some(g) = scene.gaussians.last() {
+    if let Some(g) = scene.gaussians.first() {
         println!("xyz={:?}, opacity={}, scale={:?}, rot={:?}", g.xyz, g.opacity, g.scale, g.rot);
         println!("sh_rest_len={}", g.sh_rest.len());
     }

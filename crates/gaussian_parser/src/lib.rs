@@ -6,18 +6,7 @@ use std::error::Error as StdError;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
-
-/// One Gaussian (per-vertex) record.
-#[derive(Debug, Clone)]
-pub struct Gaussian {
-    pub xyz: [f32; 3],
-    pub normals: Option<[f32; 3]>,
-    pub sh_dc: [f32; 3],
-    pub sh_rest: Vec<f32>,     // e.g., 45 for Kerbl (L=3 per color)
-    pub opacity: f32,
-    pub scale: [f32; 3],       // log-scales
-    pub rot: [f32; 4],         // quaternion xyzw (normalized)
-}
+use gaussian_types::Gaussian;
 
 /// Full scene: array of Gaussians + some metadata.
 #[derive(Debug, Clone)]

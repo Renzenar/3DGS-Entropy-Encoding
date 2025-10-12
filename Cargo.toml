@@ -5,3 +5,7 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+gaussian_types = { path = "crates/gaussian_types" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
