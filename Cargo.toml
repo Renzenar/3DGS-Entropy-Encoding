@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/*", 
-    "pipeline/compression_pipeline",
+    "pipeline/*",
 ]
 resolver = "2"
 
