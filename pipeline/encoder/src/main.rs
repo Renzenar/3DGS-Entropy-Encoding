@@ -10,6 +10,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(g) = scene.gaussians.first() {
         println!("xyz={:?}, opacity={}, scale={:?}, rot={:?}", g.xyz, g.opacity, g.scale, g.rot);
         println!("sh_rest_len={}", g.sh_rest.len());
+        println!("min xyz= {:?}", scene.mins);
+        println!("max xyz= {:?}", scene.maxes);
     }
     Ok(())
 }
