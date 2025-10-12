@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 gaussian_parser = {path = "../../crates/gaussian_parser" }
+gaussian_sorter = {path = "../../crates/gaussian_sorter"}

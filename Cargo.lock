@@ -7,6 +7,7 @@ name = "encoder"
 version = "0.1.0"
 dependencies = [
  "gaussian_parser",
+ "gaussian_sorter",
 ]
 
 [[package]]
@@ -20,6 +21,9 @@ dependencies = [
 [[package]]
 name = "gaussian_sorter"
 version = "0.1.0"
+dependencies = [
+ "gaussian_types",
+]
 
 [[package]]
 name = "gaussian_types"

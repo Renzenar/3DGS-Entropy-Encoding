@@ -1,10 +1,13 @@
 use gaussian_parser::load_gaussians_from_ply;
+use gaussian_sorter::generate_morton_code;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path : String = std::env::args().nth(1).expect("Missing .ply file path");
 
-    let scene = load_gaussians_from_ply(&path)?;
+    let mut scene = load_gaussians_from_ply(&path)?;
     println!("Loaded {} Gaussians", scene.gaussians.len());
+    
+    scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
 
     // Example: inspect the first Gaussian
     if let Some(g) = scene.gaussians.first() {
