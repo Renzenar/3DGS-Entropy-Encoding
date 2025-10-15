@@ -9,12 +9,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
 
-    // Example: inspect the first Gaussian
-    if let Some(g) = scene.gaussians.first() {
-        println!("xyz={:?}, opacity={}, scale={:?}, rot={:?}", g.xyz, g.opacity, g.scale, g.rot);
-        println!("sh_rest_len={}", g.sh_rest.len());
-        println!("min xyz= {:?}", scene.mins);
-        println!("max xyz= {:?}", scene.maxes);
+    println!("min xyz= {:?}", scene.mins);
+    println!("max xyz= {:?}", scene.maxes);
+
+    for i in 0..1000 {
+        if let Some(g) = scene.gaussians.get(i) {
+            // println!("xyz={:?}, opacity={}, scale={:?}, rot={:?}", g.xyz, g.opacity, g.scale, g.rot);
+            // println!("xyz={:?}", g.xyz);
+            // println!("opacity={:?}", g.opacity);
+            // println!("scale={:?}", g.scale);
+            // println!("rotation={:?}", g.rot);
+            println!("sh first three={:?}, {:?}, {:?} ", g.sh_rest[0], g.sh_rest[1], g.sh_rest[2]);
+            // println!("sh_rest_len={}", g.sh_rest.len());
+
+        }
     }
+
     Ok(())
 }
