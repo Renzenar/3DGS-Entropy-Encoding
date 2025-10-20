@@ -3,11 +3,13 @@
 // normalized to [0,200]. The value will be the index into the fenwick tree
 // SCALE BITS = 8 (2^8 == 256 which is greater than our alphabet range)
 use fenwick::array::{update, prefix_sum};
-pub struct Context {
-    pub fenwick_tree : [i32; 200],
-}
+use rans::{RansEncSymbol, RansEncoder};
+// use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
 
 const TREE_LEN: usize = 200;
+pub struct Context {
+    pub fenwick_tree : [i32; TREE_LEN],
+}
 
 impl Context {
     pub fn new() -> Self {
@@ -71,5 +73,59 @@ impl Context {
     }
 }
 
+pub struct RansEncoderContext {
+    context: Context,
+    encoder: RansEncoder,
+    scale_bit: u32,
+}
 
 
+impl RansEncoder {
+    pub fn new(buffer_size: usize ) -> Self {
+        let context = Context::new();
+        let encoder = B64RansEncoder::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
+        Self { context, encoder, scale_bit: 8 }
+    }
+
+    pub fn encode_values(&mut self, values: &Vec<i32>){
+        self.forward_pass(values);
+
+        for symbol in values.iter().rev() {
+            //decrement count
+            self.encoder.put(&B64RansEncSymbol::new(
+                self.get_cum_freq(*symbol) as u32,
+                self.get_freq(*symbol) as u32,
+                self.scale_bit
+            ))
+        }
+    }
+
+    fn forward_pass(&mut self, values: &Vec<i32>){
+        for symbol in values {
+            self.increment_freq(*symbol);
+        }
+    }
+
+
+    fn increment_freq(&mut self, symbol: i32){
+        if symbol >= -100 && symbol < 200 {
+            self.context.increment_freq((symbol + 100) as u8);
+        } else {
+            panic!("symbol out of bounds");
+        }
+    }
+
+    fn get_cum_freq(&self, symbol: i32) -> i32{
+        if(symbol < -100 && symbol >= 200) {
+            panic!("symbol out of bounds");
+        }
+        self.context.get_cum_freq((symbol + 100) as u8)
+    }
+
+    fn get_freq(&self, symbol: i32) -> i32{
+        if(symbol < -100 && symbol >= 200) {
+            panic!("symbol out of bounds");
+        }
+        self.context.get_freq((symbol + 100) as u8)
+    }
+}
