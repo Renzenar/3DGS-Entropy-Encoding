@@ -19,11 +19,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // println!("opacity={:?}", g.opacity);
             // println!("scale={:?}", g.scale);
             // println!("rotation={:?}", g.rot);
-            println!("sh first three={:?}, {:?}, {:?} ", g.sh_rest[0], g.sh_rest[1], g.sh_rest[2]);
-            // println!("sh_rest_len={}", g.sh_rest.len());
+            // println!("sh first three={:?}, {:?}, {:?} ", g.sh_rest[0], g.sh_rest[1], g.sh_rest[2]);
 
+            // println!("sh_rest_len={}", g.sh_rest.len());
         }
+
     }
 
+    // let x1 = scene.gaussians.get(0).unwrap().xyz[0];
+    // let x2 = scene.gaussians.get(1).unwrap().xyz[0];
+    // println!("Float value x {:#b}", scene.gaussians.first().unwrap().xyz[0].to_bits());
+    // let val: f32 = x2 - x1;
+    // println!("Float value demo val {:#b}", val.to_bits());
     Ok(())
 }

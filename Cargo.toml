@@ -1,6 +1,9 @@
 [workspace]
 members = [
-    "crates/*", 
+    "crates/gaussian_sorter",
+    "crates/gaussian_parser",
+    "crates/gaussian_types",
+    "crates/rans-coding",
     "pipeline/*",
 ]
 resolver = "2"
