@@ -1,7 +1,7 @@
 // we will use a fenwick tree in order to represent my cumulative frequencies
 // this will begin with a single, contigious alphabet across the range [-100,100]
 // normalized to [0,200]. The value will be the index into the fenwick tree
-use fenwick::array::{prefix_sum};
+use fenwick::array::{update, prefix_sum};
 pub struct Context {
     pub fenwick_tree : [i32; 200],
 }
@@ -24,6 +24,10 @@ impl Context {
         if symbol == 0 {prefix_sum(&self.fenwick_tree, 0)} else {prefix_sum(&self.fenwick_tree, symbol as usize) - prefix_sum(&self.fenwick_tree, symbol as usize - 1)}
     }
 
+    pub fn increment_freq(&mut self, symbol: u8){
+        update(&mut self.fenwick_tree, symbol as usize, 1);
+    }
+
     fn init_all_ones(tree: &mut [i32; 200]) {
         for (i, slot) in tree.iter_mut().enumerate() {
             let idx = i + 1;
@@ -32,3 +36,4 @@ impl Context {
         }
     }
 }
+

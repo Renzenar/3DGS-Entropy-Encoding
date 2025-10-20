@@ -1,6 +1,7 @@
 // use gaussian_parser::load_gaussians_from_ply;
 // use gaussian_sorter::generate_morton_code;
 use rans_coding::Context;
+use rand::Rng;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let path : String = std::env::args().nth(1).expect("Missing .ply file path");
@@ -35,12 +36,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
 
-    let context = Context::new();
+
+    //text dynamic context update
+    let mut context = Context::new();
 
     for i in 0 .. 200 {
         // println!("For {} freq={} cum_freq={}", i, context.get_freq(i), context.get_cum_freq(i));
         assert_eq!(context.get_cum_freq(i), i as i32);
         assert_eq!(context.get_freq(i), 1i32);
+    }
+
+    let rand_update = rand::rng().random_range(0..200);
+    println!("rand_update {}", rand_update);
+    context.increment_freq(rand_update);
+
+    for i in 0 .. 200 {
+        if i <= rand_update {assert_eq!(context.get_cum_freq(i), i as i32)} else {assert_eq!(context.get_cum_freq(i), i as i32 + 1);}
+       if i != rand_update {assert_eq!(context.get_freq(i), 1i32)} else {assert_eq!(context.get_freq(i), 2i32);}
     }
 
     Ok(())
