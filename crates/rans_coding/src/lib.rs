@@ -3,8 +3,8 @@
 // normalized to [0,200]. The value will be the index into the fenwick tree
 // SCALE BITS = 8 (2^8 == 256 which is greater than our alphabet range)
 use fenwick::array::{update, prefix_sum};
-use rans::{RansEncSymbol, RansEncoder};
-// use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
+// use rans::{RansEncSymbol, RansEncoder};
+use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
 
 const TREE_LEN: usize = 200;
 pub struct Context {
@@ -77,9 +77,9 @@ impl Context {
     }
 }
 
-pub struct RansEncoderContext {
+pub struct RansEncoder{
     context: Context,
-    encoder: RansEncoder,
+    encoder: B64RansEncoder,
     scale_bit: u32,
 }
 
