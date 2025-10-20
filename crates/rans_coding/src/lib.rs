@@ -33,6 +33,10 @@ impl Context {
         update(&mut self.fenwick_tree, symbol as usize, 1);
     }
 
+    pub fn decrement_freq(&mut self, symbol: u8){
+        update(&mut self.fenwick_tree, symbol as usize, -1);
+    }
+
     //This will use a bit lifting approach
     //start at the highest power of 2
     // - <= target?
