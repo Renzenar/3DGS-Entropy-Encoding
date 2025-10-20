@@ -3,7 +3,7 @@ members = [
     "crates/gaussian_sorter",
     "crates/gaussian_parser",
     "crates/gaussian_types",
-    "crates/rans-coding",
+    "crates/rans_coding",
     "pipeline/*",
 ]
 resolver = "2"

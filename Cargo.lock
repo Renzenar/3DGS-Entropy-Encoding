@@ -96,6 +96,7 @@ version = "0.1.0"
 dependencies = [
  "gaussian_parser",
  "gaussian_sorter",
+ "rans_coding",
 ]
 
 [[package]]
@@ -300,7 +301,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rans-coding"
+name = "rans_coding"
 version = "0.1.0"
 dependencies = [
  "fenwick",
