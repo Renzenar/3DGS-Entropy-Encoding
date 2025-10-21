@@ -56,7 +56,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     if i != rand_update {assert_eq!(context.get_freq(i), 1i32)} else {assert_eq!(context.get_freq(i), 2i32);}
     // }
 
+    let bytes_per_i32 = std::mem::size_of::<i32>();
+    let total_bytes = 512 * 1024; // 512 KiB
+    let num_elements = total_bytes / bytes_per_i32;
 
+    let mut rng = rand::thread_rng();
+    let mut data: Vec<i32> = Vec::with_capacity(num_elements);
+
+    for _ in 0..num_elements {
+        let value = rng.gen_range(-100..=199);
+        data.push(value);
+    }
 
 
 

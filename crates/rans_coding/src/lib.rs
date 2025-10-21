@@ -5,6 +5,7 @@
 use fenwick::array::{update, prefix_sum};
 // use rans::{RansEncSymbol, RansEncoder};
 use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
+use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti};
 
 const TREE_LEN: usize = 200;
 pub struct Context {
@@ -19,22 +20,21 @@ impl Context {
     }
 
     // cum(i) = prefix_sum(i -1) per rANS definition
-    pub fn get_cum_freq(&self, symbol: u8) -> i32{
+    pub fn get_cum_freq(&self, symbol: usize) -> i32{
         if symbol == 0 {0} else {prefix_sum(&self.fenwick_tree, symbol as usize - 1)}
     }
 
     // freq(i) = prefix_sum(i) - prefix_sum(i-1) per rANS definition
-    pub fn get_freq(&self, symbol: u8) -> i32{
-        // if symbol == 0 {self.fenwick_tree[symbol as usize]} else {self.fenwick_tree[symbol as usize] - self.fenwick_tree[symbol as usize - 1]}
-        if symbol == 0 {prefix_sum(&self.fenwick_tree, 0)} else {prefix_sum(&self.fenwick_tree, symbol as usize) - prefix_sum(&self.fenwick_tree, symbol as usize - 1)}
+    pub fn get_freq(&self, symbol: usize) -> i32{
+        if symbol == 0 {prefix_sum(&self.fenwick_tree, 0)} else {prefix_sum(&self.fenwick_tree, symbol) - prefix_sum(&self.fenwick_tree, symbol - 1)}
     }
 
-    pub fn increment_freq(&mut self, symbol: u8){
-        update(&mut self.fenwick_tree, symbol as usize, 1);
+    pub fn increment_freq(&mut self, symbol: usize){
+        update(&mut self.fenwick_tree, symbol, 1);
     }
 
-    pub fn decrement_freq(&mut self, symbol: u8){
-        update(&mut self.fenwick_tree, symbol as usize, -1);
+    pub fn decrement_freq(&mut self, symbol: usize){
+        update(&mut self.fenwick_tree, symbol, -1);
     }
 
     //This will use a bit lifting approach
@@ -77,59 +77,49 @@ impl Context {
     }
 }
 
-pub struct RansEncoder{
+pub struct RansEnc {
     context: Context,
     encoder: B64RansEncoder,
     scale_bit: u32,
 }
 
 
-impl RansEncoder {
+impl RansEnc {
     pub fn new(buffer_size: usize ) -> Self {
         let context = Context::new();
         let encoder = B64RansEncoder::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self { context, encoder, scale_bit: 8 }
     }
 
-    pub fn encode_values(&mut self, values: &Vec<i32>){
+    pub fn encode_values(&mut self, values: &Vec<i32>) -> Vec<u8>{
         self.forward_pass(values);
 
         for symbol in values.iter().rev() {
             //decrement count
+            self.context.decrement_freq(self.shift_range(*symbol));
+
             self.encoder.put(&B64RansEncSymbol::new(
-                self.get_cum_freq(*symbol) as u32,
-                self.get_freq(*symbol) as u32,
+                self.context.get_cum_freq(self.shift_range(*symbol)) as u32,
+                self.context.get_freq(self.shift_range(*symbol)) as u32,
                 self.scale_bit
             ))
         }
+
+        self.encoder.flush_all();
+
+        self.encoder.data().to_owned()
+
     }
 
     fn forward_pass(&mut self, values: &Vec<i32>){
         for symbol in values {
-            self.increment_freq(*symbol);
+            self.context.increment_freq(self.shift_range(*symbol));
         }
     }
 
-
-    fn increment_freq(&mut self, symbol: i32){
-        if symbol >= -100 && symbol < 200 {
-            self.context.increment_freq((symbol + 100) as u8);
-        } else {
-            panic!("symbol out of bounds");
-        }
+    fn shift_range(&self, symbol: i32) -> usize {
+        if symbol < -100 || symbol >= 100 { panic!("symbol out of range") }
+        (symbol + 100) as usize
     }
 
-    fn get_cum_freq(&self, symbol: i32) -> i32{
-        if(symbol < -100 && symbol >= 200) {
-            panic!("symbol out of bounds");
-        }
-        self.context.get_cum_freq((symbol + 100) as u8)
-    }
-
-    fn get_freq(&self, symbol: i32) -> i32{
-        if(symbol < -100 && symbol >= 200) {
-            panic!("symbol out of bounds");
-        }
-        self.context.get_freq((symbol + 100) as u8)
-    }
 }
