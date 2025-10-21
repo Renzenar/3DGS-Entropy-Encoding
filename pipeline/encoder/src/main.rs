@@ -1,6 +1,6 @@
 // use gaussian_parser::load_gaussians_from_ply;
 // use gaussian_sorter::generate_morton_code;
-use rans_coding::RansEnc;
+use rans_coding::{RansEnc, RansDec};
 use rand::Rng;
 
 
@@ -65,17 +65,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
     let mut data: Vec<i32> = Vec::with_capacity(num_elements);
 
-    for _ in 0..(num_elements - 200) {
+    for _ in 0..(10) {
         let value = rng.gen_range(-100..=99);
         data.push(value);
     }
 
-    let mut coder = RansEnc::new(1 * 1024 * 1024); //init to 1Mib double the input data size.
+    let mut encoder = RansEnc::new(1 * 1024 * 1024); //init to 1Mib double the input data size.
 
-    let code = coder.encode_values(&data);
+    let mut code = encoder.encode_values(&data);
 
     println!("Raw data size: {:?}", data.len() * bytes_per_i32);
     println!("Coded data size: {:?}", code.len());
+
+    let mut decoder = RansDec::new(code.as_mut_slice());
+
+    let res = decoder.decode_values(10);
+
+    assert_eq!(data, res);
 
     Ok(())
 }

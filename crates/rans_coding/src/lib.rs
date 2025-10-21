@@ -64,13 +64,22 @@ impl Context {
         self.total_freq -= 1;
     }
 
+    pub fn get_symbol_from_norm_cum_freq(&self, norm_cum_freq: u32) -> i32 {
+        let total = 1 << SCALE_BIT;
+
+        let cum_freq = (norm_cum_freq * self.total_freq as u32) / total;
+
+        self.get_symbol_from_cum_freq(cum_freq as i32)
+
+    }
+
     //This will use a bit lifting approach
     //start at the highest power of 2
     // - <= target?
     //     -if so keep that bit
     //     -if not reject that bit
     // - test the next power of 2
-    pub fn get_symbol_from_cum_freq(&self, cum_freq: i32) -> i32 {
+    fn get_symbol_from_cum_freq(&self, cum_freq: i32) -> i32 {
         //! this must be set relative to fenwick tree length (the highest power of two)
         let mut bit = 128usize;
 
@@ -92,6 +101,11 @@ impl Context {
         }
 
         idx as i32
+    }
+
+    pub fn shift_range(symbol: i32) -> usize {
+        if symbol < -100 || symbol >= 100 { panic!("symbol out of range") }
+        (symbol + 100) as usize
     }
 
     //initializes everything to a frequency of 1
@@ -117,7 +131,7 @@ impl RansEnc {
         Self { context, encoder /*, scale_bit: 12*/ }
     }
 
-    pub fn encode_values(&mut self, values: &Vec<i32>) -> Vec<u8>{
+    pub fn encode_values(&mut self, values: &Vec<i32>) -> Vec<u8> {
         println!("Beginning Forward Pass");
 
         self.forward_pass(values);
@@ -127,15 +141,14 @@ impl RansEnc {
         println!("Beginning Backward Pass");
         for symbol in values.iter().rev() {
             // println!("Symbol: {}", *symbol);
+            self.encoder.put(&B64RansEncSymbol::new(
+                self.context.norm_cum_freq(Context::shift_range(*symbol)) as u32,
+                self.context.norm_freq(Context::shift_range(*symbol)) as u32,
+                SCALE_BIT,
+            ));
 
             //decrement count
-            self.context.decrement_freq(self.shift_range(*symbol));
-
-            self.encoder.put(&B64RansEncSymbol::new(
-                self.context.norm_cum_freq(self.shift_range(*symbol)) as u32,
-                self.context.norm_freq(self.shift_range(*symbol)) as u32,
-                SCALE_BIT,
-            ))
+            self.context.decrement_freq(Context::shift_range(*symbol));
         }
         println!("Completed Backward Pass");
 
@@ -147,14 +160,11 @@ impl RansEnc {
 
     fn forward_pass(&mut self, values: &Vec<i32>){
         for symbol in values {
-            self.context.increment_freq(self.shift_range(*symbol));
+            self.context.increment_freq(Context::shift_range(*symbol));
         }
     }
 
-    fn shift_range(&self, symbol: i32) -> usize {
-        if symbol < -100 || symbol >= 100 { panic!("symbol out of range") }
-        (symbol + 100) as usize
-    }
+
 
 }
 
@@ -171,10 +181,26 @@ impl<'a> RansDec<'a> {
         Self { context, decoder }
     }
 
-    pub fn decode_values(&mut self) -> Vec<u8> {
-       let norm_cum_freq = self.decoder.get(SCALE_BIT);
+    pub fn decode_values(&mut self, length: usize) -> Vec<i32> {
+        let mut res = vec!();
 
-        vec!()
+        for _ in 0..length {
+            let norm_cum_freq = self.decoder.get(SCALE_BIT);
+
+            let symbol = self.context.get_symbol_from_norm_cum_freq(norm_cum_freq);
+
+            self.context.increment_freq(symbol as usize);
+
+            res.push(symbol - 100);
+
+            self.decoder.advance(&B64RansDecSymbol::new(
+                norm_cum_freq,
+                self.context.norm_freq(symbol as usize) as u32),
+                                 SCALE_BIT,
+            );
+        }
+
+        res
     }
 
     fn shift_range(&self, symbol: usize) -> i32 {
