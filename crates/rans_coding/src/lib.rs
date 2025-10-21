@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering::AcqRel;
 // we will use a fenwick tree in order to represent my cumulative frequencies
 // this will begin with a single, contigious alphabet across the range [-100,100]
 // normalized to [0,200]. The value will be the index into the fenwick tree
@@ -23,34 +24,45 @@ impl Context {
         Self { total_freq: TREE_LEN, fenwick_tree }
     }
 
-    pub fn norm_cum_freq(&self, symbol: usize) -> i32 {
-        let total = 1 << SCALE_BIT;
-        let total_freq = self.total_freq;
-        let raw_cum_freq = self.get_cum_freq(symbol);
+    // pub fn norm_cum_freq(&self, symbol: usize) -> u32 {
+    //     let total = 1 << SCALE_BIT;
+    //     let total_freq = self.total_freq;
+    //     let raw_cum_freq = self.get_cum_freq(symbol);
+    //
+    //     println!("raw_cum_freq {}", raw_cum_freq);
+    //
+    //     let norm_cum_freq = ((raw_cum_freq  as u64 * total as u64) / total_freq as u64) as u32;
+    //
+    //     norm_cum_freq
+    // }
+    //
+    // pub fn norm_freq(&self, symbol: usize, norm_cum_freq: u32) -> u32 {
+    //     println!("get frequency");
+    //     let symbol_cum_freq = self.norm_cum_freq(symbol + 1);
+    //
+    //     let res = symbol_cum_freq - norm_cum_freq;
+    //     assert_ne!(res, 0);
+    //
+    //     res
+    // }
 
-        (raw_cum_freq * total) / total_freq as i32
-    }
+    pub fn norm_freq_to_scale_bit(&self, freq: u32) -> u32 {
+        let total = 1 << SCALE_BIT as u64;
+        let num_tally = self.total_freq as u64;
 
-    pub fn norm_freq(&self, symbol: usize) -> i32 {
-        let symbol_cum_freq = self.norm_cum_freq(symbol + 1);
-        let prev_cum_freq = self.norm_cum_freq(symbol);
-
-        let res = symbol_cum_freq - prev_cum_freq;
-        assert_ne!(res, 0);
-
-        res
+        (freq as u64 * total / num_tally) as u32
     }
 
     // cum(i) = prefix_sum(i -1) per rANS definition
-    fn get_cum_freq(&self, symbol: usize) -> i32{
-        if symbol == 0 {0} else {prefix_sum(&self.fenwick_tree, symbol - 1)}
+    pub fn get_cum_freq(&self, symbol: usize) -> u32{
+        if symbol == 0 {0} else {prefix_sum(&self.fenwick_tree, symbol - 1) as u32}
     }
 
 
     // freq(i) = prefix_sum(i) - prefix_sum(i-1) per rANS definition
-    // pub fn get_freq(&self, symbol: usize) -> i32{
-    //     if symbol == 0 {prefix_sum(&self.fenwick_tree, 0)} else {prefix_sum(&self.fenwick_tree, symbol) - prefix_sum(&self.fenwick_tree, symbol - 1)}
-    // }
+    pub fn get_freq(&self, symbol: usize) -> u32{
+        if symbol == 0 {prefix_sum(&self.fenwick_tree, 0) as u32} else {(prefix_sum(&self.fenwick_tree, symbol) - prefix_sum(&self.fenwick_tree, symbol - 1)) as u32}
+    }
 
     pub fn increment_freq(&mut self, symbol: usize){
         update(&mut self.fenwick_tree, symbol, 1);
@@ -67,19 +79,15 @@ impl Context {
     pub fn get_symbol_from_norm_cum_freq(&self, norm_cum_freq: u32) -> i32 {
         let total = 1 << SCALE_BIT;
 
-        let cum_freq = (norm_cum_freq * self.total_freq as u32) / total;
+        let cum_freq = ((norm_cum_freq as u64 + 1) * self.total_freq as u64 - 1) / total as u64;
 
-        self.get_symbol_from_cum_freq(cum_freq as i32)
+        // println!("decoded raw_cum_freq {}", cum_freq);
+
+        self.get_symbol_from_cum_freq(cum_freq as u32)
 
     }
 
-    //This will use a bit lifting approach
-    //start at the highest power of 2
-    // - <= target?
-    //     -if so keep that bit
-    //     -if not reject that bit
-    // - test the next power of 2
-    fn get_symbol_from_cum_freq(&self, cum_freq: i32) -> i32 {
+    fn get_symbol_from_cum_freq(&self, cum_freq: u32) -> i32 {
         //! this must be set relative to fenwick tree length (the highest power of two)
         let mut bit = 128usize;
 
@@ -91,7 +99,7 @@ impl Context {
 
             if next <= TREE_LEN {
                 let block = self.fenwick_tree[next - 1];
-                if acc + block <= cum_freq {
+                if acc + block <= cum_freq as i32 {
                     acc += block;
                     idx = next;
                 }
@@ -140,17 +148,39 @@ impl RansEnc {
 
         println!("Beginning Backward Pass");
         for symbol in values.iter().rev() {
-            // println!("Symbol: {}", *symbol);
+
+            //decrement count
+            // self.context.decrement_freq(Context::shift_range(*symbol));
+
+            // let norm_cum_freq = self.context.norm_cum_freq(Context::shift_range(*symbol));
+            // let norm_freq = self.context.norm_freq(Context::shift_range(*symbol), norm_cum_freq);
+
+            let cum_freq = self.context.get_cum_freq(Context::shift_range(*symbol));
+            let freq = self.context.get_freq(Context::shift_range(*symbol));
+
+
+            let norm_cum_freq = self.context.norm_freq_to_scale_bit(cum_freq);
+            let norm_freq_high = self.context.norm_freq_to_scale_bit(cum_freq + freq);
+            let mut norm_freq = norm_freq_high - norm_cum_freq;
+
+            // if norm_freq == 0 {norm_freq = 1;}
+
+
+
+            println!("Encoding symbol: {}", *symbol);
+            println!(" - norm_cum_freq: {}", norm_cum_freq);
+            println!(" - norm_freq: {}", norm_freq);
+
+            assert_ne!(norm_freq, 0);
+
             self.encoder.put(&B64RansEncSymbol::new(
-                self.context.norm_cum_freq(Context::shift_range(*symbol)) as u32,
-                self.context.norm_freq(Context::shift_range(*symbol)) as u32,
+                norm_cum_freq,
+                norm_freq,
                 SCALE_BIT,
             ));
 
-            //decrement count
-            self.context.decrement_freq(Context::shift_range(*symbol));
         }
-        println!("Completed Backward Pass");
+        println!("Completed Backward Pass\n");
 
         self.encoder.flush_all();
 
@@ -160,7 +190,7 @@ impl RansEnc {
 
     fn forward_pass(&mut self, values: &Vec<i32>){
         for symbol in values {
-            self.context.increment_freq(Context::shift_range(*symbol));
+             self.context.increment_freq(Context::shift_range(*symbol));
         }
     }
 
@@ -189,15 +219,35 @@ impl<'a> RansDec<'a> {
 
             let symbol = self.context.get_symbol_from_norm_cum_freq(norm_cum_freq);
 
-            self.context.increment_freq(symbol as usize);
 
+            // self.context.increment_freq(symbol as usize);
             res.push(symbol - 100);
+
+
+            let freq = self.context.get_freq(symbol as usize);
+            // let norm_freq_high = self.context.norm_freq_to_scale_bit(norm_cum_freq + freq);
+            // let mut norm_freq = norm_freq_high - norm_cum_freq;
+
+            // if norm_freq == 0 {norm_freq = 1;}
+            let cum_freq = self.context.get_cum_freq(Context::shift_range(symbol));
+            let freq = self.context.get_freq(Context::shift_range(symbol));
+
+
+            // let norm_cum_freq = self.context.norm_freq_to_scale_bit(cum_freq);
+            let norm_freq_high = self.context.norm_freq_to_scale_bit(cum_freq + freq);
+            let mut norm_freq = norm_freq_high - norm_cum_freq;
+
+            assert_ne!(norm_freq, 0);
+
+            println!("Decoded symbol: {}", symbol - 100);
+            println!(" - norm_cum_freq={}", norm_cum_freq);
+            println!(" - norm_freq={}", norm_freq);
 
             self.decoder.advance(&B64RansDecSymbol::new(
                 norm_cum_freq,
-                self.context.norm_freq(symbol as usize) as u32),
-                                 SCALE_BIT,
-            );
+                norm_freq,
+            ), SCALE_BIT);
+
         }
 
         res

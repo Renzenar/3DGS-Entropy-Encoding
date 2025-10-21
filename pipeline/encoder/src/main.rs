@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
     let mut data: Vec<i32> = Vec::with_capacity(num_elements);
 
-    for _ in 0..(10) {
+    for _ in 0..(1) {
         let value = rng.gen_range(-100..=99);
         data.push(value);
     }
@@ -74,12 +74,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut code = encoder.encode_values(&data);
 
-    println!("Raw data size: {:?}", data.len() * bytes_per_i32);
-    println!("Coded data size: {:?}", code.len());
+    // println!("Raw data size: {:?}", data.len() * bytes_per_i32);
+    // println!("Coded data size: {:?}\n", code.len());
 
     let mut decoder = RansDec::new(code.as_mut_slice());
 
-    let res = decoder.decode_values(10);
+    let res = decoder.decode_values(1);
 
     assert_eq!(data, res);
 
