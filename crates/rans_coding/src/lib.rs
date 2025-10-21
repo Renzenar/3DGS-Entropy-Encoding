@@ -8,33 +8,59 @@ use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
 use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti};
 
 const TREE_LEN: usize = 200;
+const SCALE_BIT: u32 = 12;
+
 pub struct Context {
-    pub fenwick_tree : [i32; TREE_LEN],
+    total_freq: usize,
+    fenwick_tree : [i32; TREE_LEN],
 }
 
 impl Context {
     pub fn new() -> Self {
         let mut fenwick_tree = [0; TREE_LEN];
         Self::init_all_ones(&mut fenwick_tree);
-        Self { fenwick_tree }
+        Self { total_freq: TREE_LEN, fenwick_tree }
+    }
+
+    pub fn norm_cum_freq(&self, symbol: usize) -> i32 {
+        let total = 1 << SCALE_BIT;
+        let total_freq = self.total_freq;
+        let raw_cum_freq = self.get_cum_freq(symbol);
+
+        (raw_cum_freq * total) / total_freq as i32
+    }
+
+    pub fn norm_freq(&self, symbol: usize) -> i32 {
+        let symbol_cum_freq = self.norm_cum_freq(symbol + 1);
+        let prev_cum_freq = self.norm_cum_freq(symbol);
+
+        let res = symbol_cum_freq - prev_cum_freq;
+        assert_ne!(res, 0);
+
+        res
     }
 
     // cum(i) = prefix_sum(i -1) per rANS definition
-    pub fn get_cum_freq(&self, symbol: usize) -> i32{
-        if symbol == 0 {0} else {prefix_sum(&self.fenwick_tree, symbol as usize - 1)}
+    fn get_cum_freq(&self, symbol: usize) -> i32{
+        if symbol == 0 {0} else {prefix_sum(&self.fenwick_tree, symbol - 1)}
     }
 
+
     // freq(i) = prefix_sum(i) - prefix_sum(i-1) per rANS definition
-    pub fn get_freq(&self, symbol: usize) -> i32{
-        if symbol == 0 {prefix_sum(&self.fenwick_tree, 0)} else {prefix_sum(&self.fenwick_tree, symbol) - prefix_sum(&self.fenwick_tree, symbol - 1)}
-    }
+    // pub fn get_freq(&self, symbol: usize) -> i32{
+    //     if symbol == 0 {prefix_sum(&self.fenwick_tree, 0)} else {prefix_sum(&self.fenwick_tree, symbol) - prefix_sum(&self.fenwick_tree, symbol - 1)}
+    // }
 
     pub fn increment_freq(&mut self, symbol: usize){
         update(&mut self.fenwick_tree, symbol, 1);
+        self.total_freq += 1;
+        // overflow here shouldn't be an issue if the block size is controlled but may need to consider.
+        // self.total_freq = self.total_freq.wrapping_add(1);
     }
 
     pub fn decrement_freq(&mut self, symbol: usize){
         update(&mut self.fenwick_tree, symbol, -1);
+        self.total_freq -= 1;
     }
 
     //This will use a bit lifting approach
@@ -80,7 +106,7 @@ impl Context {
 pub struct RansEnc {
     context: Context,
     encoder: B64RansEncoder,
-    scale_bit: u32,
+    // scale_bit: u32,
 }
 
 
@@ -88,22 +114,30 @@ impl RansEnc {
     pub fn new(buffer_size: usize ) -> Self {
         let context = Context::new();
         let encoder = B64RansEncoder::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
-        Self { context, encoder, scale_bit: 8 }
+        Self { context, encoder /*, scale_bit: 12*/ }
     }
 
     pub fn encode_values(&mut self, values: &Vec<i32>) -> Vec<u8>{
+        println!("Beginning Forward Pass");
+
         self.forward_pass(values);
 
+        println!("Completed Forward Pass");
+
+        println!("Beginning Backward Pass");
         for symbol in values.iter().rev() {
+            // println!("Symbol: {}", *symbol);
+
             //decrement count
             self.context.decrement_freq(self.shift_range(*symbol));
 
             self.encoder.put(&B64RansEncSymbol::new(
-                self.context.get_cum_freq(self.shift_range(*symbol)) as u32,
-                self.context.get_freq(self.shift_range(*symbol)) as u32,
-                self.scale_bit
+                self.context.norm_cum_freq(self.shift_range(*symbol)) as u32,
+                self.context.norm_freq(self.shift_range(*symbol)) as u32,
+                SCALE_BIT,
             ))
         }
+        println!("Completed Backward Pass");
 
         self.encoder.flush_all();
 
@@ -123,3 +157,4 @@ impl RansEnc {
     }
 
 }
+
