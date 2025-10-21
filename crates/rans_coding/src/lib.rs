@@ -149,8 +149,7 @@ impl RansEnc {
         println!("Beginning Backward Pass");
         for symbol in values.iter().rev() {
 
-            //decrement count
-            // self.context.decrement_freq(Context::shift_range(*symbol));
+            self.context.decrement_freq(Context::shift_range(*symbol));
 
             // let norm_cum_freq = self.context.norm_cum_freq(Context::shift_range(*symbol));
             // let norm_freq = self.context.norm_freq(Context::shift_range(*symbol), norm_cum_freq);
@@ -167,9 +166,9 @@ impl RansEnc {
 
 
 
-            println!("Encoding symbol: {}", *symbol);
-            println!(" - norm_cum_freq: {}", norm_cum_freq);
-            println!(" - norm_freq: {}", norm_freq);
+            // println!("Encoding symbol: {}", *symbol);
+            // println!(" - norm_cum_freq: {}", norm_cum_freq);
+            // println!(" - norm_freq: {}", norm_freq);
 
             assert_ne!(norm_freq, 0);
 
@@ -179,6 +178,7 @@ impl RansEnc {
                 SCALE_BIT,
             ));
 
+            //decrement count
         }
         println!("Completed Backward Pass\n");
 
@@ -215,45 +215,40 @@ impl<'a> RansDec<'a> {
         let mut res = vec!();
 
         for _ in 0..length {
-            let norm_cum_freq = self.decoder.get(SCALE_BIT);
+            let norm_cum = self.decoder.get(SCALE_BIT);
 
-            let symbol = self.context.get_symbol_from_norm_cum_freq(norm_cum_freq);
+            let symbol = self.context.get_symbol_from_norm_cum_freq(norm_cum);
 
 
-            // self.context.increment_freq(symbol as usize);
             res.push(symbol - 100);
 
 
-            let freq = self.context.get_freq(symbol as usize);
-            // let norm_freq_high = self.context.norm_freq_to_scale_bit(norm_cum_freq + freq);
-            // let mut norm_freq = norm_freq_high - norm_cum_freq;
+            // let freq = self.context.get_freq(symbol as usize);
 
             // if norm_freq == 0 {norm_freq = 1;}
-            let cum_freq = self.context.get_cum_freq(Context::shift_range(symbol));
-            let freq = self.context.get_freq(Context::shift_range(symbol));
+            let cum_freq = self.context.get_cum_freq(symbol as usize);
+            let freq = self.context.get_freq(symbol as usize);
 
 
-            // let norm_cum_freq = self.context.norm_freq_to_scale_bit(cum_freq);
+            let norm_cum_freq = self.context.norm_freq_to_scale_bit(cum_freq);
             let norm_freq_high = self.context.norm_freq_to_scale_bit(cum_freq + freq);
             let mut norm_freq = norm_freq_high - norm_cum_freq;
 
             assert_ne!(norm_freq, 0);
 
-            println!("Decoded symbol: {}", symbol - 100);
-            println!(" - norm_cum_freq={}", norm_cum_freq);
-            println!(" - norm_freq={}", norm_freq);
+            // println!("Decoded symbol: {}", symbol - 100);
+            // println!(" - norm_cum_freq={}", norm_cum_freq);
+            // println!(" - norm_freq={}", norm_freq);
 
             self.decoder.advance(&B64RansDecSymbol::new(
                 norm_cum_freq,
                 norm_freq,
             ), SCALE_BIT);
 
+            self.context.increment_freq(symbol as usize);
         }
 
         res
     }
 
-    fn shift_range(&self, symbol: usize) -> i32 {
-        symbol as i32 - 100
-    }
 }
