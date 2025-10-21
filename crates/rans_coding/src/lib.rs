@@ -5,7 +5,8 @@
 use fenwick::array::{update, prefix_sum};
 // use rans::{RansEncSymbol, RansEncoder};
 use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
-use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti};
+use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol};
+use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
 
 const TREE_LEN: usize = 200;
 const SCALE_BIT: u32 = 12;
@@ -106,7 +107,6 @@ impl Context {
 pub struct RansEnc {
     context: Context,
     encoder: B64RansEncoder,
-    // scale_bit: u32,
 }
 
 
@@ -158,3 +158,26 @@ impl RansEnc {
 
 }
 
+pub struct RansDec<'a> {
+    context: Context,
+    decoder: B64RansDecoder<'a>,
+}
+
+
+impl<'a> RansDec<'a> {
+    pub fn new(data: &'a mut [u8]) -> Self {
+        let context = Context::new();
+        let decoder = B64RansDecoder::new(data);
+        Self { context, decoder }
+    }
+
+    pub fn decode_values(&mut self) -> Vec<u8> {
+       let norm_cum_freq = self.decoder.get(SCALE_BIT);
+
+        vec!()
+    }
+
+    fn shift_range(&self, symbol: usize) -> i32 {
+        symbol as i32 - 100
+    }
+}
