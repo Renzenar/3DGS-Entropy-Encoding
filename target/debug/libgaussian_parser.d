@@ -1,1 +1,1 @@
-/home/bens/dev_projects/3DGS-Entropy-Encoding/target/debug/libgaussian_parser.rlib: /home/bens/dev_projects/3DGS-Entropy-Encoding/crates/gaussian_parser/src/lib.rs
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/debug/libgaussian_parser.rlib: /home/bens/dev_projects/3DGS-Entropy-Encoding/crates/gaussian_parser/src/lib.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/crates/gaussian_types/src/lib.rs
