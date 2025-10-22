@@ -1,7 +1,14 @@
 [workspace]
 members = [
-    "crates/*", 
+    "crates/gaussian_sorter",
+    "crates/gaussian_parser",
+    "crates/gaussian_types",
+    "crates/rans_coding",
     "pipeline/*",
 ]
 resolver = "2"
 
+[workspace.dependencies]
+gaussian_types = { path = "crates/gaussian_types" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"

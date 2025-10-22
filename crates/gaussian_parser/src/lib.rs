@@ -6,24 +6,16 @@ use std::error::Error as StdError;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
-
-/// One Gaussian (per-vertex) record.
-#[derive(Debug, Clone)]
-pub struct Gaussian {
-    pub xyz: [f32; 3],
-    pub normals: Option<[f32; 3]>,
-    pub sh_dc: [f32; 3],
-    pub sh_rest: Vec<f32>,     // e.g., 45 for Kerbl (L=3 per color)
-    pub opacity: f32,
-    pub scale: [f32; 3],       // log-scales
-    pub rot: [f32; 4],         // quaternion xyzw (normalized)
-}
+use gaussian_types::Gaussian;
 
 /// Full scene: array of Gaussians + some metadata.
 #[derive(Debug, Clone)]
 pub struct Scene {
     pub gaussians: Vec<Gaussian>,
     pub meta: HashMap<String, String>,
+    pub mins: [f32; 3],
+    pub maxes: [f32; 3],
+
 }
 
 /// Errors for PLY parsing. All message-carrying variants own their String to avoid `'static` lifetimes.
@@ -153,6 +145,17 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Scene, PlyError> {
     } else { None };
 
     // Build array-of-structs
+
+    //find mins
+    let mut mins: [f32; 3] = [0f32;3];
+    let mut maxes: [f32; 3] = [0f32;3];
+
+    //initialize mins
+    if let Some(init_row) = rows.first() {
+        mins =  [init_row[i_x], init_row[i_y], init_row[i_z]];
+        maxes = mins;
+    }
+
     let mut gaussians = Vec::with_capacity(rows.len());
     for r in &rows {
         let xyz = [r[i_x], r[i_y], r[i_z]];
@@ -180,6 +183,14 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Scene, PlyError> {
         let n = (rot[0]*rot[0] + rot[1]*rot[1] + rot[2]*rot[2] + rot[3]*rot[3]).sqrt().max(1e-8);
         rot[0] /= n; rot[1] /= n; rot[2] /= n; rot[3] /= n;
 
+        for (m, v) in mins.iter_mut().zip(xyz.iter()) {
+            *m = m.min(*v);
+        }
+
+        for (m, v) in maxes.iter_mut().zip(xyz.iter()) {
+            *m = m.max(*v);
+        }
+
         gaussians.push(Gaussian { xyz, normals, sh_dc, sh_rest, opacity, scale, rot });
     }
 
@@ -190,7 +201,7 @@ pub fn load_gaussians_from_ply(path: &str) -> Result<Scene, PlyError> {
     );
     meta_map.insert("vertex_count".into(), meta.vertex_count.to_string());
 
-    Ok(Scene { gaussians, meta: meta_map })
+    Ok(Scene { gaussians, meta: meta_map, mins, maxes })
 }
 
 // ---------------- internal helpers ----------------

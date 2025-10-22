@@ -1,0 +1,14 @@
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/deps/libclang_sys-09b0d14e7dbb4cde.rmeta: /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/macros.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/common.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/dynamic.rs
+
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/deps/libclang_sys-09b0d14e7dbb4cde.rlib: /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/macros.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/common.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/dynamic.rs
+
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/deps/clang_sys-09b0d14e7dbb4cde.d: /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs /home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/macros.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/common.rs /home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/dynamic.rs
+
+/home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/lib.rs:
+/home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/support.rs:
+/home/bens/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clang-sys-1.8.1/src/link.rs:
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/macros.rs:
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/common.rs:
+/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out/dynamic.rs:
+
+# env-dep:OUT_DIR=/home/bens/dev_projects/3DGS-Entropy-Encoding/target/release/build/clang-sys-1aecab224a74173e/out
