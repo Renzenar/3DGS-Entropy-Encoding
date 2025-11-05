@@ -1,17 +1,18 @@
-// use gaussian_parser::load_gaussians_from_ply;
-// use gaussian_sorter::generate_morton_code;
+use gaussian_parser::load_gaussians_from_ply;
+use gaussian_sorter::generate_morton_code;
 use rans_coding::{RansEnc, RansDec};
-use rand::Rng;
+// use rand::Rng;
+use deflate_coder::{compress_i32_vec, /*decompress_i32_vec*/};
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // let path : String = std::env::args().nth(1).expect("Missing .ply file path");
-    //
-    // let mut scene = load_gaussians_from_ply(&path)?;
-    // println!("Loaded {} Gaussians", scene.gaussians.len());
-    //
-    // scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
-    //
+    let path : String = std::env::args().nth(1).expect("Missing .ply file path");
+
+    let mut scene = load_gaussians_from_ply(&path)?;
+    println!("Loaded {} Gaussians", scene.gaussians.len());
+
+    scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
+    // //
     // println!("min xyz= {:?}", scene.mins);
     // println!("max xyz= {:?}", scene.maxes);
     //
@@ -58,31 +59,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
     let total_bytes = 512 * 1024; // 512 KiB
+    // let num_elements = (1 << 16) - 200 ;
+    // let num_elements = (1 << 12) * 2;
     let num_elements = total_bytes / bytes_per_i32;
 
     println!("Number of elements: {}", num_elements);
 
-    let mut rng = rand::thread_rng();
+    // let mut rng = rand::thread_rng();
+    // let mut data: Vec<i32> = Vec::with_capacity(num_elements);
+
+    // for _ in 0..(num_elements) {
+    //     let value = rng.gen_range(-5..=5);
+    //     data.push(value);
+    // }
+
     let mut data: Vec<i32> = Vec::with_capacity(num_elements);
 
-    for _ in 0..(num_elements) {
-        let value = rng.gen_range(-1..=99);
-        data.push(value);
+    for i in 0..num_elements {
+        data.push(scene.gaussians.get(i).unwrap().xyz[0] as i32)
     }
+
+    //naive delta prediction
+    for i in (1..data.len()).rev() {
+        let predicted = data[i - 1];
+        let actual = data[i];
+        data[i] = actual - predicted;
+    }
+    // println!("Data: {:?}", data);
 
     let mut encoder = RansEnc::new(1 * 1024 * 1024); //init to 1Mib double the input data size.
 
     let mut code = encoder.encode_values(&data);
 
-    println!("Raw data size: {:?}", data.len() * bytes_per_i32);
-    println!("Coded data size: {:?}\n", code.len());
+    println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
+    println!("Adaptive rANS coded data size:      {:?}", code.len());
+
+    let deflate_code = compress_i32_vec(data.clone())?;
+    println!("DEFLATE (LZ77 + Huffman) code size: {:?}\n", deflate_code.len());
+
+
+    let data_size  = (data.len() * bytes_per_i32) as f32;
+    let code_size = code.len() as f32;
+    let deflate_code_size = deflate_code.len() as f32;
+
+
+    let coded_improvement = ((data_size - code_size) / data_size) * 100f32;
+    let deflate_code_improvement = ((deflate_code_size - code_size) / deflate_code_size) * 100f32;
+
+    println!("Percent improvement my adaptive rANS data: {:?}", coded_improvement);
+    println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
+
 
     let mut decoder = RansDec::new(code.as_mut_slice());
-
+    //
     let res = decoder.decode_values(num_elements);
 
-    // println!("{:?}", data);
-    // println!("{:?}", res);
+    // println!("{:?}", &data[ data.len() - 20.. data.len()]);
+    // println!("{:?}", &res[res.len() - 20..res.len()]);
+    // println!("Coded data: {:?}", code);
+    // println!("Decoded data: {:?}", res);
+    // println!("Original data: {:?}", data);
     assert_eq!(data, res);
 
     Ok(())
