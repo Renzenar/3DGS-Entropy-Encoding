@@ -8,6 +8,8 @@
       <sourceFolder url="file://$MODULE_DIR$/pipeline/compression_pipeline/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/pipeline/encoder/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/rans_coding/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/deflate_coder/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/defalte_coder/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
