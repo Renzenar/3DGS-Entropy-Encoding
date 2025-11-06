@@ -1,13 +1,16 @@
-// we will use a fenwick tree in order to represent my cumulative frequencies
-// this will begin with a single, contigious alphabet across the range [-100,100]
-// normalized to [0,200]. The value will be the index into the fenwick tree
-// SCALE BITS = 8 (2^8 == 256 which is greater than our alphabet range)
-// use fenwick::array::{update, prefix_sum};
+/**
+ * File Name: rans_coding
+ * Description: This file implements a block-adaptive rANS coder and decoder
+ * Date Created: 11/05/2025
+ * Date Last Modified: 11/05/2025
+ */
+
 use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
 use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol};
 use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
 
-const TREE_LEN: usize = 200;
+const NUM_SYMBOLS: usize = 400;
+const SHIFT_RANGE: i32 = NUM_SYMBOLS as i32 / 2;
 const SCALE_BIT: u32 = 12;
 
 struct Context {
@@ -15,6 +18,12 @@ struct Context {
     total_freq: usize,
 }
 
+/**
+ * Description: Context implements the underlying adaptive context model used by both the encoder
+ * and decoder. This model is defined to keep raw counts of each symbol in the given alphabet. The
+ * encoder and decoder are responsible for keeping normalized frequency tables for coding.
+ * 
+ */
 impl Context {
     pub fn new(len: usize) -> Self {
         Self{ freq: vec![1; len],  total_freq: len }
@@ -38,10 +47,15 @@ impl Context {
     }
 
     pub fn shift_range(symbol: i32) -> usize {
-        if symbol < -100 || symbol >= 100 { panic!("symbol out of range") }
-        (symbol + 100) as usize
+        if symbol < -SHIFT_RANGE || symbol >= SHIFT_RANGE {
+            println!("symbol error: {:?}", symbol);
+            panic!("symbol out of range") }
+        (symbol + SHIFT_RANGE) as usize
     }
 
+    /**Description: rescale_model scales each index in the array by a factor of 2. If it scales to
+     * 0, it will resolve to 1. Total_freq is updated with the new scale.
+     */
     pub fn rescale_model(&mut self) {
         let mut total = 0u32;
         self.freq.iter_mut().for_each(|x| {
@@ -66,10 +80,24 @@ pub struct RansEnc {
 
 }
 
-
+/**
+ * Description: RansEnc implements the rans encoder and all necessary methods. 
+ * The encoder performs two passes
+ * Forward Pass:
+ *  - tallies raw counts and rebuilds a normalized frequency table whenever the context model's
+ *    total_frequency is equal to 2^SCALE_BIT
+ *  - caches previous normalized context model in snapshots to simulate decoder's LIFO forward
+ *    processing
+ *  - rescales context model at each normalization
+ *
+ * Backward Pass:
+ *  - encodes values in reverse order due to rANS's LIFO nature
+ *  - uses the cached histogram from the forward pass at each stage
+ *
+ */
 impl RansEnc {
     pub fn new(buffer_size: usize ) -> Self {
-        let context = Context::new(TREE_LEN);
+        let context = Context::new(NUM_SYMBOLS);
         let encoder = B64RansEncoder::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self { context, encoder, snapshots: vec![], rescale_location: vec![]}
     }
@@ -151,10 +179,17 @@ pub struct RansDec<'a> {
     freq_to_symbol: Vec<usize>,
 }
 
-
+/**
+ * Description RansDec implements the rANS decoding algorithm
+ * 
+ * Decoding Loop:
+ *  - keeps a adaptive context model and replaces its decoding histogram whenever the underlying
+ *    context model total frequency equals 2^SCALE_BIT
+ *  - returns an array of all encoded symbols
+ */
 impl<'a> RansDec<'a> {
     pub fn new(data: &'a mut [u8]) -> Self {
-        let context = Context::new(TREE_LEN);
+        let context = Context::new(NUM_SYMBOLS);
         let decoder = B64RansDecoder::new(data);
         Self { context, decoder, symbols: vec![], freq_to_symbol: vec![] }
     }
@@ -170,12 +205,8 @@ impl<'a> RansDec<'a> {
             let symbol = self.freq_to_symbol[cum_freq as usize];
 
 
-            res.push(symbol as i32 - 100);
+            res.push(symbol as i32 - SHIFT_RANGE);
 
-
-            // println!("Decoded symbol: {}", symbol - 100);
-            // println!(" - cum_freq={}", norm_cum_freq);
-            // println!(" - freq={}", norm_freq);
 
             self.decoder.advance(&self.symbols[symbol], SCALE_BIT);
 
@@ -192,8 +223,8 @@ impl<'a> RansDec<'a> {
     }
 
     pub fn build_inverse_freq_table(&mut self) {
-        self.symbols = Vec::with_capacity(TREE_LEN);
-        let mut cum_freqs = Vec::with_capacity(TREE_LEN);
+        self.symbols = Vec::with_capacity(NUM_SYMBOLS);
+        let mut cum_freqs = Vec::with_capacity(NUM_SYMBOLS);
         let total_freq = 1 << SCALE_BIT;
 
 

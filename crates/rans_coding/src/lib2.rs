@@ -1,3 +1,8 @@
+/**
+ * NOTE: NOT USED!
+ * This was the initial per-symbol adaptive approach
+ */
+
 use std::sync::atomic::Ordering::AcqRel;
 // we will use a fenwick tree in order to represent my cumulative frequencies
 // this will begin with a single, contigious alphabet across the range [-100,100]
