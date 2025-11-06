@@ -13,8 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
     // //
-    // println!("min xyz= {:?}", scene.mins);
-    // println!("max xyz= {:?}", scene.maxes);
+    println!("min xyz= {:?}", scene.mins);
+    println!("max xyz= {:?}", scene.maxes);
     //
     // for i in 0..1000 {
     //     if let Some(g) = scene.gaussians.get(i) {
@@ -58,10 +58,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // }
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
-    let total_bytes = 512 * 1024; // 512 KiB
-    // let num_elements = (1 << 16) - 200 ;
-    // let num_elements = (1 << 12) * 2;
-    let num_elements = total_bytes / bytes_per_i32;
+    // let total_bytes = 512 * 1024; // 512 KiB
+    let num_elements = scene.gaussians.len();
+    let total_bytes = bytes_per_i32 * scene.gaussians.len();
+    // let num_elements = (1 << 16) * 40;
+    // let num_elements = 1 << 20;
+    // let num_elements = 10;
+    // let num_elements = total_bytes / bytes_per_i32;
 
     println!("Number of elements: {}", num_elements);
 
@@ -76,7 +79,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Vec<i32> = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
-        data.push(scene.gaussians.get(i).unwrap().xyz[0] as i32)
+        let val = scene.gaussians.get(i).unwrap().xyz[0] as i32;
+        data.push(val);
     }
 
     //naive delta prediction
@@ -87,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // println!("Data: {:?}", data);
 
-    let mut encoder = RansEnc::new(1 * 1024 * 1024); //init to 1Mib double the input data size.
+    let mut encoder = RansEnc::new(total_bytes * 2); //init to 1Mib double the input data size.
 
     let mut code = encoder.encode_values(&data);
 
