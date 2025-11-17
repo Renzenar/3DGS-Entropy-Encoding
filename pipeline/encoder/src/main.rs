@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut encoder = RansEnc::new(total_bytes * 2); //init to 1Mib double the input data size.
 
-    let mut code = encoder.encode_values(&data);
+    let (mut code, raw_bytes) = encoder.encode_values(&data);
 
     println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
     println!("Adaptive rANS coded data size:      {:?}", code.len());
@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     let data_size  = (data.len() * bytes_per_i32) as f32;
-    let code_size = code.len() as f32;
+    let code_size = code.len() as f32 + raw_bytes.len() as f32;
     let deflate_code_size = deflate_code.len() as f32;
 
 
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
 
 
-    let mut decoder = RansDec::new(code.as_mut_slice());
+    let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
     //
     let res = decoder.decode_values(num_elements);
 
