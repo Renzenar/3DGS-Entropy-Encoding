@@ -9,11 +9,12 @@ use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
 use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol};
 use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
 
-const NUM_SYMBOLS: usize = 400;
+const NUM_SYMBOLS: usize = 100;
 const SHIFT_RANGE: i32 = NUM_SYMBOLS as i32 / 2;
 const SCALE_BIT: u32 = 14;
 
 struct Context {
+    alphabet_len: usize,
     freq: Vec<u16>,
     total_freq: usize,
 }
@@ -25,14 +26,20 @@ struct Context {
  * 
  */
 impl Context {
-    pub fn new(len: usize) -> Self {
-        Self{ freq: vec![1; len],  total_freq: len }
+    //initialize array to alphabet length + 1 to allow for escape symbol
+    //the last index [length] will be the escape symbol
+    pub fn new(alphabet_len: usize) -> Self {
+        Self{ alphabet_len,  freq: vec![1; alphabet_len  + 1],  total_freq: alphabet_len + 1 }
     }
 
+    //TODO: consider whether we should "adapt" aka increment frequency of the escape symbol
+    //may not matter much. May be better determined with testing
+    //currently we do not increment the escape character
     pub fn increment_freq(&mut self, idx: usize) {
-       self.freq[idx] += 1;
-        self.total_freq += 1;
+            self.freq[idx] += 1;
+            self.total_freq += 1;
     }
+
     // pub fn decrement_freq(&mut self, idx: usize) {
     //     self.freq[idx] -= 1;
     //     self.total_freq -= 1;
@@ -46,11 +53,20 @@ impl Context {
        self.total_freq == (1 << SCALE_BIT)
     }
 
-    pub fn shift_range(symbol: i32) -> usize {
+    /**Shift range
+     * Shifts a signed integer to the unsigned alphabet range starting at 0
+     *
+     * return: (bool, usize)
+     * bool -  false if out of range (signals escape character should be used)
+     * usize - the shifted unsigned integer index
+     */
+    pub fn shift_range(&self, symbol: i32) -> (bool, usize) {
         if symbol < -SHIFT_RANGE || symbol >= SHIFT_RANGE {
-            println!("symbol error: {:?}", symbol);
-            panic!("symbol out of range") }
-        (symbol + SHIFT_RANGE) as usize
+           //if out of range, return escape character
+            (false, self.alphabet_len)
+        } else {
+            (true, (symbol + SHIFT_RANGE) as usize)
+        }
     }
 
     /**Description: rescale_model scales each index in the array by a factor of 2. If it scales to
@@ -58,12 +74,12 @@ impl Context {
      */
     pub fn rescale_model(&mut self) {
         let mut total = 0u32;
-        self.freq.iter_mut().for_each(|x| {
-            *x >>= 1;
-            if *x == 0 {
-                *x = 1;
+        self.freq.iter_mut().for_each(|idx| {
+            *idx >>= 1;
+            if *idx == 0 {
+                *idx = 1;
             }
-            total += *x as u32;
+            total += *idx as u32;
         });
         self.total_freq = total as usize;
     }
@@ -102,7 +118,9 @@ impl RansEnc {
         Self { context, encoder, snapshots: vec![], rescale_location: vec![]}
     }
 
-    pub fn encode_values(&mut self, values: &Vec<i32>) -> Vec<u8> {
+    pub fn encode_values(&mut self, values: &Vec<i32>) -> (Vec<u8>, Vec<u8>) {
+        let mut raw_symbols: Vec<u8> = vec![];
+
         println!("Beginning Forward Pass");
 
         self.forward_pass(values);
@@ -118,9 +136,28 @@ impl RansEnc {
         let mut symbols : Vec<B64RansEncSymbol> = self.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
 
         for (i, symbol) in values.iter().enumerate().rev() {
-            self.encoder.put(&symbols[Context::shift_range(*symbol)]);
+            match self.context.shift_range(*symbol) {
+                (true, idx) => {
+                    self.encoder.put(&symbols[idx])
+                },
+                (false, idx) => {
+                    println!("Escape symbol encoded due to out-of-range symbol: {:?}", symbol);
+                    //encode escape symbol
+                    self.encoder.put(&symbols[idx]);
 
-            //this very well may have to happen before the symbol is encoded
+                    //flush encoder buffer and store
+                    // self.encoder.flush_all();
+                    // code.append(&mut self.encoder.data().to_owned());
+
+                    //append the out-of-range symbol's raw bytes
+                    //perhaps more could be done here to reduce size (hopefully this doesn't happen frequently)
+                    raw_symbols.append(&mut symbol.to_ne_bytes().to_vec());
+
+                    //reset encoder to pick off where left off
+                    // self.encoder.reset();
+                }
+            }
+
             if i == rescale && i != 0 {
                 // println!("rescaling at {:?}", i);
                 if let Some(idx) = self.rescale_location.pop() {
@@ -133,7 +170,7 @@ impl RansEnc {
 
         self.encoder.flush_all();
 
-        self.encoder.data().to_owned()
+        (self.encoder.data().to_owned(), raw_symbols)
 
     }
 
@@ -145,7 +182,15 @@ impl RansEnc {
                 self.context.rescale_model();
                 self.rescale_location.push(i);
             }
-            self.context.increment_freq(Context::shift_range(*val));
+            match self.context.shift_range(*val) {
+                (true, idx) => {
+                    self.context.increment_freq(idx);
+                },
+                //this skips incrementing frequency if out of range
+                _ => {
+                  //   println!("Skipping freq increment");
+                },
+            }
         }
     }
 
@@ -175,6 +220,7 @@ impl RansEnc {
 pub struct RansDec<'a> {
     context: Context,
     decoder: B64RansDecoder<'a>,
+    raw_bytes: Vec<u8>,
     symbols: Vec<B64RansDecSymbol>,
     freq_to_symbol: Vec<usize>,
 }
@@ -188,10 +234,10 @@ pub struct RansDec<'a> {
  *  - returns an array of all encoded symbols
  */
 impl<'a> RansDec<'a> {
-    pub fn new(data: &'a mut [u8]) -> Self {
+    pub fn new(code_data: &'a mut [u8], raw_bytes: Vec<u8>) -> Self {
         let context = Context::new(NUM_SYMBOLS);
-        let decoder = B64RansDecoder::new(data);
-        Self { context, decoder, symbols: vec![], freq_to_symbol: vec![] }
+        let decoder = B64RansDecoder::new(code_data);
+        Self { context, decoder, raw_bytes, symbols: vec![], freq_to_symbol: vec![] }
     }
 
     pub fn decode_values(&mut self, length: usize) -> Vec<i32> {
@@ -204,13 +250,26 @@ impl<'a> RansDec<'a> {
 
             let symbol = self.freq_to_symbol[cum_freq as usize];
 
+            //need to verify logic
+            let value: i32  = match cum_freq == (self.freq_to_symbol.len() as u32 - 1) {
+                true => {
+                    assert!(!self.raw_bytes.len() >= 4);
+                    let val = i32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
+                    self.raw_bytes.drain(self.raw_bytes.len() - 4..);
+                    println!("decoded out-of-range symbol: {:?}", val);
+                    val
 
-            res.push(symbol as i32 - SHIFT_RANGE);
+                },
+                false => {
+                    self.context.increment_freq(symbol);
+                    symbol as i32 - SHIFT_RANGE
+                },
+            };
 
+            res.push(value);
 
             self.decoder.advance(&self.symbols[symbol], SCALE_BIT);
 
-            self.context.increment_freq(symbol);
 
             if self.context.rebuild_histogram() {
                 // println!("rebuilding freq table");
