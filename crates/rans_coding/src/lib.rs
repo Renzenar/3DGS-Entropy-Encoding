@@ -11,7 +11,7 @@ use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
 
 const NUM_SYMBOLS: usize = 400;
 const SHIFT_RANGE: i32 = NUM_SYMBOLS as i32 / 2;
-const SCALE_BIT: u32 = 12;
+const SCALE_BIT: u32 = 14;
 
 struct Context {
     freq: Vec<u16>,
