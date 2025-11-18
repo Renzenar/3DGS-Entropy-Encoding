@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // println!("Data: {:?}", data);
 
-    let mut encoder = RansEnc::new(total_bytes * 2); //init to 1Mib double the input data size.
+    let mut encoder = RansEnc::new(total_bytes * 4); //init to 1Mib double the input data size.
 
     let (mut code, raw_bytes) = encoder.encode_values(&data);
 

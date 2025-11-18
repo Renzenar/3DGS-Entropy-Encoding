@@ -5,16 +5,17 @@
  * Date Last Modified: 11/05/2025
  */
 
-use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder};
+use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder, B64RansEncoderMulti};
 use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol};
 use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
 
 const NUM_SYMBOLS: usize = 100;
-const SHIFT_RANGE: i32 = NUM_SYMBOLS as i32 / 2;
+// const SHIFT_RANGE: i32 = NUM_SYMBOLS as i32 / 2;
 const SCALE_BIT: u32 = 14;
 
 struct Context {
     alphabet_len: usize,
+    shift_range: i32,
     freq: Vec<u16>,
     total_freq: usize,
 }
@@ -28,8 +29,9 @@ struct Context {
 impl Context {
     //initialize array to alphabet length + 1 to allow for escape symbol
     //the last index [length] will be the escape symbol
+    //NOTE: alphabet_len must be factor of 2 (I should probably enforce this somehow)
     pub fn new(alphabet_len: usize) -> Self {
-        Self{ alphabet_len,  freq: vec![1; alphabet_len  + 1],  total_freq: alphabet_len + 1 }
+        Self{ alphabet_len, shift_range: alphabet_len as i32 / 2,  freq: vec![1; alphabet_len  + 1],  total_freq: alphabet_len + 1 }
     }
 
     //TODO: consider whether we should "adapt" aka increment frequency of the escape symbol
@@ -61,11 +63,11 @@ impl Context {
      * usize - the shifted unsigned integer index
      */
     pub fn shift_range(&self, symbol: i32) -> (bool, usize) {
-        if symbol < -SHIFT_RANGE || symbol >= SHIFT_RANGE {
+        if symbol < -self.shift_range || symbol >= self.shift_range {
            //if out of range, return escape character
             (false, self.alphabet_len)
         } else {
-            (true, (symbol + SHIFT_RANGE) as usize)
+            (true, (symbol + self.shift_range) as usize)
         }
     }
 
@@ -87,7 +89,7 @@ impl Context {
 
 pub struct RansEnc {
     context: Context,
-    encoder: B64RansEncoder,
+    encoder: B64RansEncoderMulti<4>,
     snapshots: Vec<Vec<B64RansEncSymbol>>,
     //consider turning this into a single flat index, for now this is proof of concept
     //would probably have to communicate how many partitions there are with each data stream
@@ -114,18 +116,18 @@ pub struct RansEnc {
 impl RansEnc {
     pub fn new(buffer_size: usize ) -> Self {
         let context = Context::new(NUM_SYMBOLS);
-        let encoder = B64RansEncoder::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
+        let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self { context, encoder, snapshots: vec![], rescale_location: vec![]}
     }
 
-    pub fn encode_values(&mut self, values: &Vec<i32>) -> (Vec<u8>, Vec<u8>) {
+    pub fn encode_values(&mut self, values: &Vec<i32> ) -> (Vec<u8>, Vec<u8>) {
         let mut raw_symbols: Vec<u8> = vec![];
 
-        println!("Beginning Forward Pass");
+        //TODO component-wise breakdown and delta-coding
 
+        //complete forward pass concurrently for the 3 parts.
         self.forward_pass(values);
 
-        println!("Completed Forward Pass");
 
         println!("Beginning Backward Pass");
         let mut rescale = 0;
@@ -138,12 +140,12 @@ impl RansEnc {
         for (i, symbol) in values.iter().enumerate().rev() {
             match self.context.shift_range(*symbol) {
                 (true, idx) => {
-                    self.encoder.put(&symbols[idx])
+                    self.encoder.put_at(/*channel*/,&symbols[idx])
                 },
                 (false, idx) => {
                     println!("Escape symbol encoded due to out-of-range symbol: {:?}", symbol);
                     //encode escape symbol
-                    self.encoder.put(&symbols[idx]);
+                    self.encoder.put_at(/*channel*/, &symbols[idx]);
 
                     //flush encoder buffer and store
                     // self.encoder.flush_all();
@@ -174,7 +176,23 @@ impl RansEnc {
 
     }
 
+    fn component_wise_breakdown(&self, values: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<u32>) {
+        let mut signs = Vec::with_capacity(values.len());
+        let mut exponents = Vec::with_capacity(values.len());
+        let mut mantissa_bits = Vec::with_capacity(values.len());
+
+        signs.push((bits >> 31) & 0x1);
+        exponents.push((bits >> 23) & 0xFF);
+        mantissa_bits.push(bits & 0x7F_FFFF);
+
+        (vec![], vec![], vec![])
+    }
+
+
+
     fn forward_pass(&mut self, values: &Vec<i32>){
+        println!("Beginning Forward Pass");
+
         self.build_snapshot();
         for (i, val) in values.iter().enumerate() {
             if self.context.rebuild_histogram() /*&& (values.len() - (i + 1)) > (1 << SCALE_BIT)*/ {
@@ -192,6 +210,8 @@ impl RansEnc {
                 },
             }
         }
+
+        println!("Completed Forward Pass");
     }
 
     fn build_snapshot(&mut self) {
@@ -251,7 +271,7 @@ impl<'a> RansDec<'a> {
             let symbol = self.freq_to_symbol[cum_freq as usize];
 
             //need to verify logic
-            let value: i32  = match cum_freq == (self.freq_to_symbol.len() as u32 - 1) {
+            let value: i32  = match symbol == NUM_SYMBOLS {
                 true => {
                     assert!(!self.raw_bytes.len() >= 4);
                     let val = i32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
