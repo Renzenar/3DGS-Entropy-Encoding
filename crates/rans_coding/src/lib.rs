@@ -251,7 +251,7 @@ impl<'a> RansDec<'a> {
             let symbol = self.freq_to_symbol[cum_freq as usize];
 
             //need to verify logic
-            let value: i32  = match cum_freq == (self.freq_to_symbol.len() as u32 - 1) {
+            let value: i32  = match symbol == NUM_SYMBOLS {
                 true => {
                     assert!(!self.raw_bytes.len() >= 4);
                     let val = i32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
