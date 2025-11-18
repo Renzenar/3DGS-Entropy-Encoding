@@ -217,6 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         delta_decode(&mut decoded);
 
         let mut original = &streams[idx].1;
+        assert_eq!(decoded, *original);
         if decoded != *original {
             println!("STREAM MISMATCH: {}", name);
         }
