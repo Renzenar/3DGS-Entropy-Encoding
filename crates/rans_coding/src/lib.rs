@@ -87,9 +87,9 @@ impl Context {
     }
 }
 
-pub struct RansEnc {
-    context: Context,
-    encoder: B64RansEncoderMulti<4>,
+pub struct RansEncContext {
+    context: [Context; 3],
+    encoder: B64RansEncoderMulti<3>,
     snapshots: Vec<Vec<B64RansEncSymbol>>,
     //consider turning this into a single flat index, for now this is proof of concept
     //would probably have to communicate how many partitions there are with each data stream
@@ -113,9 +113,10 @@ pub struct RansEnc {
  *  - uses the cached histogram from the forward pass at each stage
  *
  */
-impl RansEnc {
+impl RansEncContext {
     pub fn new(buffer_size: usize ) -> Self {
-        let context = Context::new(NUM_SYMBOLS);
+        //TODO specify the correct NUM_SYMBOLS
+        let context = [Context::new(NUM_SYMBOLS), Context::new(NUM_SYMBOLS), Context::new(NUM_SYMBOLS)];
         let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self { context, encoder, snapshots: vec![], rescale_location: vec![]}
     }
@@ -177,15 +178,31 @@ impl RansEnc {
     }
 
     fn component_wise_breakdown(&self, values: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<u32>) {
-        let mut signs = Vec::with_capacity(values.len());
-        let mut exponents = Vec::with_capacity(values.len());
+        let mut signs : Vec<u8> = Vec::with_capacity(values.len());
+        let mut exponents : Vec<u8> = Vec::with_capacity(values.len());
         let mut mantissa_bits = Vec::with_capacity(values.len());
 
-        signs.push((bits >> 31) & 0x1);
-        exponents.push((bits >> 23) & 0xFF);
-        mantissa_bits.push(bits & 0x7F_FFFF);
+        //first value not delta coded
+        if let Some(val) = values.first() {
+            let bits = val.to_bits();
+            signs.push(((bits >> 31) & 0x1) as u8);
+            exponents.push(((bits >> 23) & 0xFF) as u8);
+            mantissa_bits.push(bits & 0x7F_FFFF );
+        }
 
-        (vec![], vec![], vec![])
+        //delta code exponent and mantissa of remaining values
+        if values.len() > 1 {
+            for i  in 1..values.len() {
+                let bits = values[i].to_bits();
+                signs.push(((bits >> 31) & 0x1) as u8);
+                exponents.push(
+                    ((bits >> 23) & 0xFF) as u8 - exponents[i - 1]
+                );
+                mantissa_bits.push(bits & 0x7F_FFFF - mantissa_bits[i - 1]);
+            };
+        }
+
+            (signs, exponents, mantissa_bits)
     }
 
 
