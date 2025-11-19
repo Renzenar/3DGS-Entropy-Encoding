@@ -18,6 +18,8 @@ struct Context {
     shift_range: i32,
     freq: Vec<u16>,
     total_freq: usize,
+    // snapshots: Vec<Vec<B64RansEncSymbol>>,
+    // rescale_location: Vec<usize>
 }
 
 /**
@@ -31,7 +33,11 @@ impl Context {
     //the last index [length] will be the escape symbol
     //NOTE: alphabet_len must be factor of 2 (I should probably enforce this somehow)
     pub fn new(alphabet_len: usize) -> Self {
-        Self{ alphabet_len, shift_range: alphabet_len as i32 / 2,  freq: vec![1; alphabet_len  + 1],  total_freq: alphabet_len + 1 }
+        Self{ alphabet_len,
+            shift_range: alphabet_len as i32 / 2,
+            freq: vec![1; alphabet_len  + 1],
+            total_freq: alphabet_len + 1,
+            }
     }
 
     //TODO: consider whether we should "adapt" aka increment frequency of the escape symbol
@@ -86,10 +92,8 @@ impl Context {
         self.total_freq = total as usize;
     }
 }
-
-pub struct RansEncContext {
-    context: [Context; 3],
-    encoder: B64RansEncoderMulti<3>,
+struct RansEncContext {
+    context: Context,
     snapshots: Vec<Vec<B64RansEncSymbol>>,
     //consider turning this into a single flat index, for now this is proof of concept
     //would probably have to communicate how many partitions there are with each data stream
@@ -114,13 +118,78 @@ pub struct RansEncContext {
  *
  */
 impl RansEncContext {
-    pub fn new(buffer_size: usize ) -> Self {
-        //TODO specify the correct NUM_SYMBOLS
-        let context = [Context::new(NUM_SYMBOLS), Context::new(NUM_SYMBOLS), Context::new(NUM_SYMBOLS)];
-        let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
-        Self { context, encoder, snapshots: vec![], rescale_location: vec![]}
+    pub fn new(alphabet_size: usize) -> Self {
+        let context = Context::new(alphabet_size);
+        Self { context, snapshots: vec![], rescale_location: vec![]}
     }
 
+    //might want to add this into component breakdown
+    fn forward_pass(&mut self, values: &Vec<i32>){
+        println!("Beginning Forward Pass");
+
+        self.build_snapshot();
+        for (i, val) in values.iter().enumerate() {
+            if self.context.rebuild_histogram() /*&& (values.len() - (i + 1)) > (1 << SCALE_BIT)*/ {
+                self.build_snapshot();
+                self.context.rescale_model();
+                self.rescale_location.push(i);
+            }
+            match self.context.shift_range(*val) {
+                (true, idx) => {
+                    self.context.increment_freq(idx);
+                },
+                //this skips incrementing frequency if out of range
+                _ => {
+                  //   println!("Skipping freq increment");
+                },
+            }
+        }
+
+        println!("Completed Forward Pass");
+    }
+
+    fn build_snapshot(&mut self) {
+        // println!("build snapsht");
+        let res : Vec<B64RansEncSymbol> = self.context.get_freq_array().iter()
+            .scan(0u32, |acc, &x|{
+                let val = *acc;
+                *acc += x as u32;
+                // println!("new FREQ: {}", x);
+                Some((val, x))
+            }).map(|(cum_freq, freq)|
+            B64RansEncSymbol::new(
+                cum_freq,
+                freq as u32,
+                SCALE_BIT
+            )
+        ).collect();
+
+        // println!("New histogram: {:?}", res);
+
+        self.snapshots.push(res);
+    }
+
+}
+
+
+pub struct RansEnc {
+    sign_context: RansEncContext,
+    exponent_context: RansEncContext,
+    mantissa_context: RansEncContext,
+    encoder: B64RansEncoderMulti<3>
+}
+
+impl RansEnc {
+    pub fn new(buffer_size: usize) -> Self {
+        let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
+        Self {
+            //TODO determine correct alphabet sizes
+            sign_context: RansEncContext::new(2),
+            exponent_context: RansEncContext::new(1 << 8),
+            mantissa_context: RansEncContext::new(1 << 14),
+            encoder,
+        }
+    }
     pub fn encode_values(&mut self, values: &Vec<i32> ) -> (Vec<u8>, Vec<u8>) {
         let mut raw_symbols: Vec<u8> = vec![];
 
@@ -202,65 +271,18 @@ impl RansEncContext {
             };
         }
 
-            (signs, exponents, mantissa_bits)
+        (signs, exponents, mantissa_bits)
     }
-
-
-
-    fn forward_pass(&mut self, values: &Vec<i32>){
-        println!("Beginning Forward Pass");
-
-        self.build_snapshot();
-        for (i, val) in values.iter().enumerate() {
-            if self.context.rebuild_histogram() /*&& (values.len() - (i + 1)) > (1 << SCALE_BIT)*/ {
-                self.build_snapshot();
-                self.context.rescale_model();
-                self.rescale_location.push(i);
-            }
-            match self.context.shift_range(*val) {
-                (true, idx) => {
-                    self.context.increment_freq(idx);
-                },
-                //this skips incrementing frequency if out of range
-                _ => {
-                  //   println!("Skipping freq increment");
-                },
-            }
-        }
-
-        println!("Completed Forward Pass");
-    }
-
-    fn build_snapshot(&mut self) {
-        // println!("build snapsht");
-        let res : Vec<B64RansEncSymbol> = self.context.get_freq_array().iter()
-            .scan(0u32, |acc, &x|{
-                let val = *acc;
-                *acc += x as u32;
-                // println!("new FREQ: {}", x);
-                Some((val, x))
-            }).map(|(cum_freq, freq)|
-            B64RansEncSymbol::new(
-                cum_freq,
-                freq as u32,
-                SCALE_BIT
-            )
-        ).collect();
-
-        // println!("New histogram: {:?}", res);
-
-        self.snapshots.push(res);
-    }
-
 }
 
-pub struct RansDec<'a> {
+pub struct RansDecContext<'a> {
     context: Context,
-    decoder: B64RansDecoder<'a>,
+    // decoder: B64RansDecoder<'a>,
     raw_bytes: Vec<u8>,
     symbols: Vec<B64RansDecSymbol>,
     freq_to_symbol: Vec<usize>,
 }
+
 
 /**
  * Description RansDec implements the rANS decoding algorithm
@@ -270,7 +292,7 @@ pub struct RansDec<'a> {
  *    context model total frequency equals 2^SCALE_BIT
  *  - returns an array of all encoded symbols
  */
-impl<'a> RansDec<'a> {
+impl<'a> RansDecContext<'a> {
     pub fn new(code_data: &'a mut [u8], raw_bytes: Vec<u8>) -> Self {
         let context = Context::new(NUM_SYMBOLS);
         let decoder = B64RansDecoder::new(code_data);
