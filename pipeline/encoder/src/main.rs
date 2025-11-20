@@ -1,6 +1,6 @@
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
-use rans_coding::{RansEnc, RansDec};
+use rans_coding::{RansEnc,/* RansDec*/};
 // use rand::Rng;
 use deflate_coder::{compress_i32_vec, /*decompress_i32_vec*/};
 
@@ -9,12 +9,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path : String = std::env::args().nth(1).expect("Missing .ply file path");
 
     let mut scene = load_gaussians_from_ply(&path)?;
-    println!("Loaded {} Gaussians", scene.gaussians.len());
+    // println!("Loaded {} Gaussians", scene.gaussians.len());
 
     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
     // //
-    println!("min xyz= {:?}", scene.mins);
-    println!("max xyz= {:?}", scene.maxes);
+    // println!("min xyz= {:?}", scene.mins);
+    // println!("max xyz= {:?}", scene.maxes);
     //
     // for i in 0..1000 {
     //     if let Some(g) = scene.gaussians.get(i) {
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let num_elements = 10;
     // let num_elements = total_bytes / bytes_per_i32;
 
-    println!("Number of elements: {}", num_elements);
+    // println!("Number of elements: {}", num_elements);
 
     // let mut rng = rand::thread_rng();
     // let mut data: Vec<i32> = Vec::with_capacity(num_elements);
@@ -76,54 +76,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     data.push(value);
     // }
 
-    let mut data: Vec<i32> = Vec::with_capacity(num_elements);
+    let mut data: Vec<f32> = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
-        let val = scene.gaussians.get(i).unwrap().xyz[0] as i32;
+        let val = scene.gaussians.get(i).unwrap().xyz[0];
         data.push(val);
     }
 
-    //naive delta prediction
-    for i in (1..data.len()).rev() {
-        let predicted = data[i - 1];
-        let actual = data[i];
-        data[i] = actual - predicted;
-    }
-    // println!("Data: {:?}", data);
 
     let mut encoder = RansEnc::new(total_bytes * 4); //init to 1Mib double the input data size.
 
-    let (mut code, raw_bytes) = encoder.encode_values(&data);
+    let (_,_, mantissa) = encoder.componentize_forward_pass(&data);
 
-    println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
-    println!("Adaptive rANS coded data size:      {:?}", code.len());
+    for mantissa in mantissa {
+        // print!("{:?},", mantissa);
+    }
 
-    let deflate_code = compress_i32_vec(data.clone())?;
-    println!("DEFLATE (LZ77 + Huffman) code size: {:?}\n", deflate_code.len());
+    // let (mut code, raw_bytes) = encoder.componentize_forward_pass(&data);
 
+    // println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
+    // println!("Adaptive rANS coded data size:      {:?}", code.len());
 
-    let data_size  = (data.len() * bytes_per_i32) as f32;
-    let code_size = code.len() as f32 + raw_bytes.len() as f32;
-    let deflate_code_size = deflate_code.len() as f32;
+    // let deflate_code = compress_i32_vec(data.clone())?;
+    // println!("DEFLATE (LZ77 + Huffman) code size: {:?}\n", deflate_code.len());
 
-
-    let coded_improvement = ((data_size - code_size) / data_size) * 100f32;
-    let deflate_code_improvement = ((deflate_code_size - code_size) / deflate_code_size) * 100f32;
-
-    println!("Percent improvement my adaptive rANS data: {:?}", coded_improvement);
-    println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
-
-
-    let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
     //
-    let res = decoder.decode_values(num_elements);
+    // let data_size  = (data.len() * bytes_per_i32) as f32;
+    // let code_size = code.len() as f32 + raw_bytes.len() as f32;
+    // let deflate_code_size = deflate_code.len() as f32;
+
+
+    // let coded_improvement = ((data_size - code_size) / data_size) * 100f32;
+    // let deflate_code_improvement = ((deflate_code_size - code_size) / deflate_code_size) * 100f32;
+    //
+    // println!("Percent improvement my adaptive rANS data: {:?}", coded_improvement);
+    // println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
+    //
+    //
+    // let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
+    // //
+    // let res = decoder.decode_values(num_elements);
 
     // println!("{:?}", &data[ data.len() - 20.. data.len()]);
     // println!("{:?}", &res[res.len() - 20..res.len()]);
     // println!("Coded data: {:?}", code);
     // println!("Decoded data: {:?}", res);
     // println!("Original data: {:?}", data);
-    assert_eq!(data, res);
+    // assert_eq!(data, res);
 
     Ok(())
 }

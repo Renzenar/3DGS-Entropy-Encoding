@@ -80,6 +80,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
+name = "bv"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8834bb1d8ee5dc048ee3124f2c7c1afcc6bc9aed03f11e9dfd8c69470a5db340"
+dependencies = [
+ "feature-probe",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -203,6 +212,12 @@ dependencies = [
  "libc",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "feature-probe"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "835a3dc7d1ec9e75e2b5fb4ba75396837112d2060b03f7d43bc1897c7f7211da"
 
 [[package]]
 name = "fenwick"
@@ -452,6 +467,7 @@ dependencies = [
 name = "rans_coding"
 version = "0.1.0"
 dependencies = [
+ "bv",
  "fenwick",
  "rans",
 ]
