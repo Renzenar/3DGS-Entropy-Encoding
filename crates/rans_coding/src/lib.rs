@@ -271,7 +271,7 @@ impl RansEnc {
             for i  in 1..values.len() {
                 let residual  = (values[i] - values[i - 1]);
 
-                print!("{:?},", residual);
+                // print!("{:?},", residual);
 
                 let bits = residual.to_bits();
 

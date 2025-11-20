@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Vec<f32> = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
-        let val = scene.gaussians.get(i).unwrap().xyz[0];
+        let val = scene.gaussians.get(i).unwrap().xyz[1];
         data.push(val);
     }
 
@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (_,_, mantissa) = encoder.componentize_forward_pass(&data);
 
     for mantissa in mantissa {
-        // print!("{:?},", mantissa);
+        print!("{:?},", mantissa);
     }
 
     // let (mut code, raw_bytes) = encoder.componentize_forward_pass(&data);
