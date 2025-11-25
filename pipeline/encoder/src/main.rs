@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
 use rans_coding::{RansEnc,/* RansDec*/};
@@ -79,18 +80,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Vec<f32> = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
-        let val = scene.gaussians.get(i).unwrap().xyz[1];
+        let val = scene.gaussians.get(i).unwrap().xyz[2];
         data.push(val);
     }
 
 
-    let mut encoder = RansEnc::new(total_bytes * 4); //init to 1Mib double the input data size.
+    let mut encoder = RansEnc::new(total_bytes * 4, &data); //init to 1Mib double the input data size.
 
-    let (_,_, mantissa) = encoder.componentize_forward_pass(&data);
+    let (_,_, mantissas) = encoder.componentize_forward_pass();
 
-    for mantissa in mantissa {
+    let mut values : HashMap<u32,u32> = HashMap::new();
+
+    for mantissa in mantissas {
         print!("{:?},", mantissa);
+        // if values.contains_key(&mantissa) {
+        //     values.insert(mantissa, values.get(&mantissa).unwrap() + 1);
+        // } else {
+        //     values.insert(mantissa, 1);
+        // }
     }
+
+    let mut sort_values : Vec<_> = values.iter().collect();
+    // sort_values.sort_by(|a, b| b.1.cmp(&a.1));
+    // sort_values.truncate(1000);
+    // sort_values.sort_by(|a, b| a.0.cmp(&b.0));
+    //
+    // for (i, val) in sort_values.iter().enumerate() {
+    //     println!("{:?}: {}", val.0, val.1);
+    // }
+
 
     // let (mut code, raw_bytes) = encoder.componentize_forward_pass(&data);
 
