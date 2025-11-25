@@ -10,9 +10,11 @@ use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSym
 use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
 use bv::BitVec;
 
-const NUM_SYMBOLS: usize = 100;
+// const NUM_SYMBOLS: usize = 100;
 // const SHIFT_RANGE: i32 = NUM_SYMBOLS as i32 / 2;
 const SCALE_BIT: u32 = 14;
+const MAX_MANTISSA_ALPHABET: u32 = 257;
+const MAX_ERR : i32 = 15_000;
 
 struct Context {
     alphabet_len: usize,
@@ -133,6 +135,10 @@ impl RansEncContext {
             self.rescale_location.push(idx);
         }
 
+        if idx < self.context.alphabet_len {
+            self.context.increment_freq(val as usize);
+        }
+
         // match self.context.shift_range(val) {
         //     (true, idx) => {
         //         self.context.increment_freq(idx);
@@ -164,91 +170,92 @@ impl RansEncContext {
 }
 
 
-pub struct RansEnc {
+pub struct RansEnc<'a> {
+    encode: &'a Vec<f32>,
     sign_context: RansEncContext,
     exponent_context: RansEncContext,
     mantissa_context: RansEncContext,
     encoder: B64RansEncoderMulti<3>
 }
 
-impl RansEnc {
-    pub fn new(buffer_size: usize) -> Self {
+
+impl<'a> RansEnc<'a> {
+    pub fn new(buffer_size: usize, encode: &'a Vec<f32>) -> Self {
         let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self {
             //TODO determine correct alphabet sizes
+            encode,
             sign_context: RansEncContext::new(2),
             exponent_context: RansEncContext::new(1 << 8),
-            mantissa_context: RansEncContext::new(1 << 14),
+            mantissa_context: RansEncContext::new(MAX_MANTISSA_ALPHABET as usize),
             encoder,
         }
     }
-    // pub fn encode_values(&mut self, values: &Vec<i32> ) -> (Vec<u8>, Vec<u8>) {
-    //     let mut raw_symbols: Vec<u8> = vec![];
-    //
-    //     //TODO component-wise breakdown and delta-coding
-    //
-    //     //complete forward pass concurrently for the 3 parts.
-    //     self.forward_pass(values);
-    //
-    //
-    //     println!("Beginning Backward Pass");
-    //     let mut rescale = 0;
-    //     if let Some(idx) = self.rescale_location.pop() {
-    //         rescale = idx;
-    //     }
-    //
-    //     let mut symbols : Vec<B64RansEncSymbol> = self.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
-    //
-    //     for (i, symbol) in values.iter().enumerate().rev() {
-    //         match self.context.shift_range(*symbol) {
-    //             (true, idx) => {
-    //                 self.encoder.put_at(/*channel*/,&symbols[idx])
-    //             },
-    //             (false, idx) => {
-    //                 println!("Escape symbol encoded due to out-of-range symbol: {:?}", symbol);
-    //                 //encode escape symbol
-    //                 self.encoder.put_at(/*channel*/, &symbols[idx]);
-    //
-    //                 //flush encoder buffer and store
-    //                 // self.encoder.flush_all();
-    //                 // code.append(&mut self.encoder.data().to_owned());
-    //
-    //                 //append the out-of-range symbol's raw bytes
-    //                 //perhaps more could be done here to reduce size (hopefully this doesn't happen frequently)
-    //                 raw_symbols.append(&mut symbol.to_ne_bytes().to_vec());
-    //
-    //                 //reset encoder to pick off where left off
-    //                 // self.encoder.reset();
-    //             }
-    //         }
-    //
-    //         if i == rescale && i != 0 {
-    //             // println!("rescaling at {:?}", i);
-    //             if let Some(idx) = self.rescale_location.pop() {
-    //                 rescale = idx;
-    //             }
-    //             symbols = self.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
-    //         }
-    //     }
-    //     println!("Completed Backward Pass\n");
-    //
-    //     self.encoder.flush_all();
-    //
-    //     (self.encoder.data().to_owned(), raw_symbols)
-    //
-    // }
+    pub fn encode_values(&mut self, values: &Vec<i32> ) -> (Vec<u8>, Vec<u8>) {
+        let mut raw_symbols: Vec<u8> = vec![];
 
-    pub fn componentize_forward_pass(&mut self, values: &Vec<f32>) -> (BitVec, Vec<u8>, Vec<u32>) {
-        let mut signs : BitVec = BitVec::with_capacity(values.len() as u64);
-        let mut exponents : Vec<u8> = Vec::with_capacity(values.len());
-        let mut mantissa_bits = Vec::with_capacity(values.len());
+        //complete forward pass concurrently for the 3 parts.
+        self.componentize_forward_pass();
 
-        // self.sign_context.build_snapshot();
-        // self.exponent_context.build_snapshot();
-        // self.mantissa_context.build_snapshot();
+
+        println!("Beginning Backward Pass");
+        let mut rescale = 0;
+        if let Some(idx) = self.rescale_location.pop() {
+            rescale = idx;
+        }
+
+        let mut symbols : Vec<B64RansEncSymbol> = self.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
+
+        for (i, symbol) in values.iter().enumerate().rev() {
+            match self.context.shift_range(*symbol) {
+                (true, idx) => {
+                    self.encoder.put_at(/*channel*/,&symbols[idx])
+                },
+                (false, idx) => {
+                    println!("Escape symbol encoded due to out-of-range symbol: {:?}", symbol);
+                    //encode escape symbol
+                    self.encoder.put_at(/*channel*/, &symbols[idx]);
+
+                    //flush encoder buffer and store
+                    // self.encoder.flush_all();
+                    // code.append(&mut self.encoder.data().to_owned());
+
+                    //append the out-of-range symbol's raw bytes
+                    //perhaps more could be done here to reduce size (hopefully this doesn't happen frequently)
+                    raw_symbols.append(&mut symbol.to_ne_bytes().to_vec());
+
+                    //reset encoder to pick off where left off
+                    // self.encoder.reset();
+                }
+            }
+
+            if i == rescale && i != 0 {
+                // println!("rescaling at {:?}", i);
+                if let Some(idx) = self.rescale_location.pop() {
+                    rescale = idx;
+                }
+                symbols = self.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
+            }
+        }
+        println!("Completed Backward Pass\n");
+
+        self.encoder.flush_all();
+
+        (self.encoder.data().to_owned(), raw_symbols)
+
+    }
+
+    fn componentize_forward_pass(&mut self) -> (BitVec, Vec<u8>, Vec<u32>) {
+        let mut signs : BitVec = BitVec::with_capacity(self.encode.len() as u64);
+        let mut exponents : Vec<u8> = Vec::with_capacity(self.encode.len());
+        let mut mantissa_bits = Vec::with_capacity(self.encode.len());
+
+        self.sign_context.build_snapshot();
+        self.exponent_context.build_snapshot();
+        self.mantissa_context.build_snapshot();
 
         //first value not delta coded
-        if let Some(val) = values.first() {
+        if let Some(val) = self.encode.first() {
             let bits = val.to_bits();
 
             let sign = ((bits >> 31) & 1) != 0;
@@ -256,9 +263,9 @@ impl RansEnc {
             let mantissa = bits & 0x7F_FFFF;
 
             //right will definetly need to figure out
-            // self.sign_context.increment_freq(sign as u32, 0);
-            // self.exponent_context.increment_freq(exponent as u32, 0);
-            // self.mantissa_context.increment_freq(mantissa, 0);
+            self.sign_context.increment_freq(sign as u32, 0);
+            self.exponent_context.increment_freq(exponent as u32, 0);
+            self.mantissa_context.increment_freq(mantissa, 0);
 
 
             signs.push(sign);
@@ -267,9 +274,9 @@ impl RansEnc {
         }
 
         //delta code exponent and mantissa of remaining values
-        if values.len() > 1 {
-            for i  in 1..values.len() {
-                let residual  = (values[i] - values[i - 1]);
+        if self.encode.len() > 1 {
+            for i  in 1..self.encode.len() {
+                let residual  = (self.encode[i] - self.encode[i - 1]);
 
                 // print!("{:?},", residual);
 
@@ -279,9 +286,9 @@ impl RansEnc {
                 let exponent = ((bits >> 23) & 0xFF) as u8;
                 let mantissa = bits & 0x7F_FFFF;
 
-                // self.sign_context.increment_freq(sign as u32, 0);
-                // self.exponent_context.increment_freq(exponent as u32, 0);
-                // self.mantissa_context.increment_freq(mantissa, 0);
+                self.sign_context.increment_freq(sign as u32, i);
+                self.exponent_context.increment_freq(exponent as u32, i);
+                self.mantissa_context.increment_freq(RansEnc::quantize_idx(mantissa), i);
 
                 signs.push(sign);
                 exponents.push(exponent);
@@ -290,6 +297,33 @@ impl RansEnc {
         }
 
         (signs, exponents, mantissa_bits)
+    }
+
+    // m      = original 23-bit mantissa
+    // step   = 2^15 = 32,768
+    // k      = round(m / step)
+    // m_q    = k * step
+    // err    = |m - m_q|
+    // N      = 16,045,443 total mantissas
+    // maxerr = 16,384 = step / 2      (as expected for nearest-grid snap)
+    //
+    // err = |m - round(m/step)*step|
+    // if err <= 15_000:  // ~0.18 * step
+    // encode nearest-peak index
+    // else:
+    // encode ESC + raw mantissa (or a higher-precision scheme)
+    fn quantize_idx(m : u32) -> u32 {
+        let step = 1 << 15;
+
+        let rat : f32 = m as f32 / step as f32;
+        let mut idx = rat.round() as u32;
+
+        let err = (m - (idx * step)) as i32;
+        if err.abs() <= MAX_ERR {
+           idx = MAX_MANTISSA_ALPHABET;
+        }
+
+        idx
     }
 }
 
