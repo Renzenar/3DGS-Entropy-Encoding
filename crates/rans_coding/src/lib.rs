@@ -6,13 +6,13 @@
  */
 
 use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder, B64RansEncoderMulti};
-use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol};
-use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol};
+use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol, RansDecoderMulti};
+use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol, B64RansDecoderMulti};
 use bv::BitVec;
 
 const SIGN_ALPH_SIZE : usize = 2;
 const EXP_ALPH_SIZE : usize = 1 << 8;
-const MANT_ALPH_SIZE: u32 = 257;
+const MANT_ALPH_SIZE: usize = 257;
 const SCALE_BIT: u32 = 14;
 const MAX_ERR : i32 = 15_000;
 const SIGN_CHANNEL: usize = 0;
@@ -200,7 +200,7 @@ impl<'a> RansEnc<'a> {
                self.encoder.put_at(EXPONENT_CHANNEL,&exp_symbols[exp as usize]);
             }
             if let Some(mant) = mant_vals.pop() {
-               match mant == MANT_ALPH_SIZE {
+               match mant == MANT_ALPH_SIZE as u32 {
                    true => {
                        self.encoder.put_at(MANTISSA_CHANNEL,&mant_symbols[MANT_ALPH_SIZE as usize]);
                        raw_symbols.append(&mut mant.to_ne_bytes().to_vec());
@@ -304,19 +304,18 @@ impl<'a> RansEnc<'a> {
 
         let err = (m - (idx * step)) as i32;
         if err.abs() <= MAX_ERR {
-           idx = MANT_ALPH_SIZE;
+           idx = MANT_ALPH_SIZE as u32;
         }
 
         idx
     }
 }
 
-pub struct RansDecContext<'a> {
+struct RansDecContext {
     context: Context,
-    // decoder: B64RansDecoder<'a>,
-    raw_bytes: Vec<u8>,
     symbols: Vec<B64RansDecSymbol>,
     freq_to_symbol: Vec<usize>,
+    alphabet_len: usize,
 }
 
 
@@ -328,57 +327,16 @@ pub struct RansDecContext<'a> {
  *    context model total frequency equals 2^SCALE_BIT
  *  - returns an array of all encoded symbols
  */
-impl<'a> RansDecContext<'a> {
-    pub fn new(code_data: &'a mut [u8], raw_bytes: Vec<u8>) -> Self {
-        let context = Context::new(NUM_SYMBOLS);
-        let decoder = B64RansDecoder::new(code_data);
-        Self { context, decoder, raw_bytes, symbols: vec![], freq_to_symbol: vec![] }
+impl RansDecContext {
+    pub fn new(alphabet_len: usize) -> Self {
+        let context = Context::new(alphabet_len);
+        Self { context, symbols: vec![], freq_to_symbol: vec![], alphabet_len }
     }
 
-    pub fn decode_values(&mut self, length: usize) -> Vec<i32> {
-        let mut res = Vec::with_capacity(length);
-        self.build_inverse_freq_table();
-
-        println!("\nBeginning Decoding");
-        for _ in 0..length {
-            let cum_freq = self.decoder.get(SCALE_BIT);
-
-            let symbol = self.freq_to_symbol[cum_freq as usize];
-
-            //need to verify logic
-            let value: i32  = match symbol == NUM_SYMBOLS {
-                true => {
-                    assert!(!self.raw_bytes.len() >= 4);
-                    let val = i32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
-                    self.raw_bytes.drain(self.raw_bytes.len() - 4..);
-                    println!("decoded out-of-range symbol: {:?}", val);
-                    val
-
-                },
-                false => {
-                    self.context.increment_freq(symbol);
-                    symbol as i32 - SHIFT_RANGE
-                },
-            };
-
-            res.push(value);
-
-            self.decoder.advance(&self.symbols[symbol], SCALE_BIT);
-
-
-            if self.context.rebuild_histogram() {
-                // println!("rebuilding freq table");
-                self.build_inverse_freq_table();
-                self.context.rescale_model();
-            }
-        }
-
-        res
-    }
 
     pub fn build_inverse_freq_table(&mut self) {
-        self.symbols = Vec::with_capacity(NUM_SYMBOLS);
-        let mut cum_freqs = Vec::with_capacity(NUM_SYMBOLS);
+        self.symbols = Vec::with_capacity(self.alphabet_len);
+        let mut cum_freqs = Vec::with_capacity(self.alphabet_len);
         let total_freq = 1 << SCALE_BIT;
 
 
@@ -401,4 +359,71 @@ impl<'a> RansDecContext<'a> {
 
     }
 
+}
+
+pub struct RansDec<'a> {
+    sign_context: RansDecContext,
+    exponent_context: RansDecContext,
+    mantissa_context: RansDecContext,
+    decoder: B64RansDecoderMulti<'a,3>,
+    raw_bytes: Vec<u8>,
+}
+
+impl<'a> RansDec<'a> {
+    pub fn new(code_data: &'a mut [u8], raw_bytes: Vec<u8>) -> Self {
+        Self {
+            sign_context: RansDecContext::new(SIGN_ALPH_SIZE),
+            exponent_context: RansDecContext::new(EXP_ALPH_SIZE),
+            mantissa_context: RansDecContext::new(MANT_ALPH_SIZE),
+            decoder: B64RansDecoderMulti::new(code_data),
+            raw_bytes,
+        }
+    }
+    pub fn decode_values(&mut self, length: usize) -> Vec<i32> {
+        let mut res = Vec::with_capacity(length);
+        self.sign_context.build_inverse_freq_table();
+        self.exponent_context.build_inverse_freq_table();
+        self.mantissa_context.build_inverse_freq_table();
+
+        println!("\nBeginning Decoding");
+        for _ in 0..length {
+            let sign_cum_freq = self.decoder.get_at(SIGN_CHANNEL ,SCALE_BIT);
+            let exp_cum_freq = self.decoder.get_at(EXPONENT_CHANNEL ,SCALE_BIT);
+            let mant_cum_freq = self.decoder.get_at(MANTISSA_CHANNEL ,SCALE_BIT);
+
+            let sign_symbol = self.sign_context.freq_to_symbol[sign_cum_freq as usize];
+            let exp_symbol = self.exponent_context.freq_to_symbol[exp_cum_freq as usize];
+            let mant_symbol = self.mantissa_context.freq_to_symbol[mant_cum_freq as usize];
+
+            //need to verify logic
+            let mantissa: u32  = match mant_symbol == self.mantissa_context.alphabet_len {
+                true => {
+                    assert!(!self.raw_bytes.len() >= 4);
+                    let val = u32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
+                    self.raw_bytes.drain(self.raw_bytes.len() - 4..);
+                    println!("decoded out-of-range symbol: {:?}", val);
+                    val
+
+                },
+                false => {
+                    //TODO need to define this for RansDecContext
+                    self.mantissa_context.increment_freq(symbol);
+                    // symbol as i32 - SHIFT_RANGE
+                },
+            };
+
+            res.push(value);
+
+            self.decoder.advance(&self.symbols[symbol], SCALE_BIT);
+
+
+            if self.context.rebuild_histogram() {
+                // println!("rebuilding freq table");
+                self.build_inverse_freq_table();
+                self.context.rescale_model();
+            }
+        }
+
+        res
+    }
 }
