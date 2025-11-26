@@ -60,11 +60,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
     // let total_bytes = 512 * 1024; // 512 KiB
-    // let num_elements = scene.gaussians.len();
+    let num_elements = scene.gaussians.len();
     let total_bytes = bytes_per_i32 * scene.gaussians.len();
-    // let num_elements = (1 << 16) * 40;
+    // let num_elements = (1 << 16);
     // let num_elements = (1 << 14) - 10 ;
-    let num_elements = 10;
+    // let num_elements = 1024 * 2;
+    // let num_elements = (1 << 14) - 240;
     // let num_elements = total_bytes / bytes_per_i32;
 
     // println!("Number of elements: {}", num_elements);
@@ -140,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("{:?}", &res[res.len() - 20..res.len()]);
     // println!("Coded data: {:?}", code);
     // println!("Decoded data: {:?}", res);
-    println!("Original data: {:?}", data);
+    // println!("Original data: {:?}", data);
     assert_eq!(quantized, res);
 
 

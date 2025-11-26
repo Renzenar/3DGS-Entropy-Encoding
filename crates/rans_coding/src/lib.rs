@@ -112,15 +112,13 @@ impl RansEncContext {
     pub fn increment_freq(&mut self, val: u32, idx: usize){
         // println!("incrementing freq at idx: {}", idx);
         if self.context.rebuild_histogram() {
+            // println!("rebuilding histogram Encoder");
             self.build_snapshot();
             self.context.rescale_model();
             self.rescale_location.push(idx);
         }
 
-        if val < self.alphabet_len as u32 {
-            self.context.increment_freq(val as usize);
-        }
-
+        self.context.increment_freq(val as usize);
     }
 
     pub fn build_snapshot(&mut self) {
@@ -209,12 +207,12 @@ impl<'a> RansEnc<'a> {
                        self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[MANT_ALPH_SIZE]);
                        raw_symbols.append(&mut mant.to_ne_bytes().to_vec());
                        out_range += 1;
-                       println!("Out of range mantissa: {}", RansEnc::quantize_idx(mant));
+                       // println!("Out of range mantissa: {}", RansEnc::quantize_idx(mant));
                    },
                    false => {
                        self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[mq_idx as usize]);
                        in_range += 1;
-                       println!("In range mantissa: {}", RansEnc::quantize_idx(mant));
+                       // println!("In range mantissa: {}", RansEnc::quantize_idx(mant));
                    }
                }
             }
@@ -276,15 +274,18 @@ impl<'a> RansEnc<'a> {
             //right will definetly need to figure out
             self.sign_context.increment_freq(sign as u32, 0);
             self.exponent_context.increment_freq(exponent as u32, 0);
-            self.mantissa_context.increment_freq(RansEnc::quantize_idx(mantissa), 0);
+
+            let mut mq_idx = RansEnc::quantize_idx(mantissa);
+            if mq_idx < MANT_ALPH_SIZE as u32 {
+                self.mantissa_context.increment_freq(mq_idx, 0);
+            }
 
             //NOTE! debug code:
-            let mut q_m = RansEnc::quantize_idx(mantissa);
-            if q_m == MANT_ALPH_SIZE as u32 {q_m = mantissa} else {q_m = q_m * STEP as u32}
+            if mq_idx == MANT_ALPH_SIZE as u32 {mq_idx = mantissa} else {mq_idx = mq_idx * STEP as u32}
             let bits =
                     ((sign as u32 & 0x1) << 31) |      // sign bit at bit 31
                     ((exponent as u32 & 0xFF) << 23) | // exponent in bits 23–30
-                    (q_m & 0x7F_FFFF);
+                    (mq_idx & 0x7F_FFFF);
             let quantized_val = f32::from_bits(bits);
             quantized.push(quantized_val);
             //END! debug code
@@ -313,7 +314,12 @@ impl<'a> RansEnc<'a> {
 
 
                 let mut mq_idx = RansEnc::quantize_idx(mantissa);
-            self.mantissa_context.increment_freq(mq_idx, i);
+                if mq_idx < MANT_ALPH_SIZE as u32 {
+                    self.mantissa_context.increment_freq(mq_idx, i);
+                }
+                // else {
+                //     println!("Mantissa out of range: {}", mq_idx);
+                // }
 
                 //NOTE! debug code:
                 // let mut q_m = RansEnc::quantize_idx(mantissa);
@@ -377,8 +383,9 @@ impl RansDecContext {
         self.context.increment_freq(symbol);
     }
 
-    pub fn rebuild_histogram(&mut self) {
+    pub fn rebuild_histogram(&mut self, channel: usize) {
         if self.context.rebuild_histogram() {
+            // println!("rebuilding histogram Decoder {} for channel {}", self.context.total_freq, channel);
             self.build_inverse_freq_table();
             self.context.rescale_model();
         }
@@ -405,9 +412,6 @@ impl RansDecContext {
             self.freq_to_symbol.resize(cum_freqs[i + 1] as usize, i);
         }
         self.freq_to_symbol.resize(total_freq as usize, cum_freqs.len() - 1);
-
-        // println!("freq_to_symbol: {:?}", self.freq_to_symbol);
-
 
     }
 
@@ -441,6 +445,7 @@ impl<'a> RansDec<'a> {
         self.mantissa_context.build_inverse_freq_table();
 
         println!("\nBeginning Decoding");
+        let (mut num_esc, mut num_code) = (0, 0);
         for _ in 0..length {
             let sign_cum_freq = self.decoder.get_at(DEC_SIGN_CHANNEl, SCALE_BIT);
             let exp_cum_freq = self.decoder.get_at(DEC_EXPONENT_CHANNEL, SCALE_BIT);
@@ -461,26 +466,30 @@ impl<'a> RansDec<'a> {
 
             // println!("mant symbol {:?}", mant_symbol);
 
+
             //need to verify logic
-            let mantissa: u32  = match mant_symbol == MANT_ALPH_SIZE  {
-                true => {
+            let mantissa: u32  = match mant_symbol < MANT_ALPH_SIZE  {
+                false => {
                     let val = u32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
                     self.raw_bytes.drain(self.raw_bytes.len() - 4..);
                     // println!("decoded out-of-range symbol: {:?}", val);
+                    num_esc += 1;
                     val
 
                 },
-                false => {
+                true => {
                     self.mantissa_context.increment_freq(mant_symbol);
+                    num_code += 1;
                     //convert from quantized index to raw value
                     // println!("Decoded quantized symbol: {:?}", mant_symbol);
                     mant_symbol as u32 * STEP as u32
                 },
             };
 
-            self.sign_context.rebuild_histogram();
-            self.exponent_context.rebuild_histogram();
-            self.mantissa_context.rebuild_histogram();
+
+            self.sign_context.rebuild_histogram(DEC_SIGN_CHANNEl);
+            self.exponent_context.rebuild_histogram(DEC_EXPONENT_CHANNEL);
+            self.mantissa_context.rebuild_histogram(DEC_MANTISSA_CHANNEL);
 
             // println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
 
@@ -493,6 +502,7 @@ impl<'a> RansDec<'a> {
             res.push(float);
         }
 
+        // println!("Decoded esc {} and coded {} ", num_esc, num_code);
         res
     }
 }
