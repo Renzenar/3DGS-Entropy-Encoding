@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
-use rans_coding::{RansEnc,/* RansDec*/};
+use rans_coding::{RansEnc, RansDec};
 // use rand::Rng;
 use deflate_coder::{compress_i32_vec, /*decompress_i32_vec*/};
 
@@ -60,11 +60,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
     // let total_bytes = 512 * 1024; // 512 KiB
-    let num_elements = scene.gaussians.len();
+    // let num_elements = scene.gaussians.len();
     let total_bytes = bytes_per_i32 * scene.gaussians.len();
     // let num_elements = (1 << 16) * 40;
     // let num_elements = 1 << 20;
-    // let num_elements = 10;
+    let num_elements = 10;
     // let num_elements = total_bytes / bytes_per_i32;
 
     // println!("Number of elements: {}", num_elements);
@@ -80,27 +80,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Vec<f32> = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
-        let val = scene.gaussians.get(i).unwrap().xyz[2];
+        let val = scene.gaussians.get(i).unwrap().xyz[0];
         data.push(val);
     }
 
 
     let mut encoder = RansEnc::new(total_bytes * 4, &data); //init to 1Mib double the input data size.
 
-    let (_,_, mantissas) = encoder.componentize_forward_pass();
-
-    let mut values : HashMap<u32,u32> = HashMap::new();
-
-    for mantissa in mantissas {
-        print!("{:?},", mantissa);
-        // if values.contains_key(&mantissa) {
+    // let (_,_, mantissas) = encoder.componentize_forward_pass();
+    //
+    // let mut values : HashMap<u32,u32> = HashMap::new();
+    //
+    // for mantissa in mantissas {
+    //     print!("{:?},", mantissa);
+    //     // if values.contains_key(&mantissa) {
         //     values.insert(mantissa, values.get(&mantissa).unwrap() + 1);
         // } else {
         //     values.insert(mantissa, 1);
         // }
-    }
+    // }
 
-    let mut sort_values : Vec<_> = values.iter().collect();
+    // let mut sort_values : Vec<_> = values.iter().collect();
+
     // sort_values.sort_by(|a, b| b.1.cmp(&a.1));
     // sort_values.truncate(1000);
     // sort_values.sort_by(|a, b| a.0.cmp(&b.0));
@@ -110,37 +111,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // }
 
 
-    // let (mut code, raw_bytes) = encoder.componentize_forward_pass(&data);
+    let (mut code, raw_bytes, quantized) = encoder.encode_values();
 
-    // println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
-    // println!("Adaptive rANS coded data size:      {:?}", code.len());
+
+    println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
+    println!("Adaptive rANS coded data size:      {:?}", code.len() + raw_bytes.len());
 
     // let deflate_code = compress_i32_vec(data.clone())?;
     // println!("DEFLATE (LZ77 + Huffman) code size: {:?}\n", deflate_code.len());
 
     //
-    // let data_size  = (data.len() * bytes_per_i32) as f32;
-    // let code_size = code.len() as f32 + raw_bytes.len() as f32;
+    let data_size  = (data.len() * bytes_per_i32) as f32;
+    let code_size = code.len() as f32 + raw_bytes.len() as f32;
     // let deflate_code_size = deflate_code.len() as f32;
 
 
-    // let coded_improvement = ((data_size - code_size) / data_size) * 100f32;
+    let coded_improvement = ((data_size - code_size) / data_size) * 100f32;
     // let deflate_code_improvement = ((deflate_code_size - code_size) / deflate_code_size) * 100f32;
     //
-    // println!("Percent improvement my adaptive rANS data: {:?}", coded_improvement);
+    println!("Percent improvement my adaptive rANS data: {:?}", coded_improvement);
     // println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
     //
     //
-    // let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
+    let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
     // //
-    // let res = decoder.decode_values(num_elements);
+    let res = decoder.decode_values(num_elements);
 
     // println!("{:?}", &data[ data.len() - 20.. data.len()]);
     // println!("{:?}", &res[res.len() - 20..res.len()]);
     // println!("Coded data: {:?}", code);
     // println!("Decoded data: {:?}", res);
-    // println!("Original data: {:?}", data);
-    // assert_eq!(data, res);
+    println!("Original data: {:?}", data);
+    assert_eq!(quantized, res);
+
 
     Ok(())
 }
