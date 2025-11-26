@@ -16,9 +16,6 @@ const MANT_ALPH_SIZE: usize = 257;
 const SCALE_BIT: u32 = 14;
 const MAX_ERR : i32 = 15_000;
 const STEP : f32 = (1 << 15) as f32;
-const SIGN_CHANNEL: usize = 0;
-const EXPONENT_CHANNEL: usize = 1;
-const MANTISSA_CHANNEL: usize = 2;
 
 struct Context {
     alphabet_len: usize,
@@ -146,7 +143,9 @@ impl RansEncContext {
     }
 
 }
-
+const ENC_SIGN_CHANNEL: usize = 0;
+const ENC_EXPONENT_CHANNEL: usize = 1;
+const ENC_MANTISSA_CHANNEL: usize = 2;
 pub struct RansEnc<'a> {
     encode: &'a Vec<f32>,
     sign_context: RansEncContext,
@@ -197,22 +196,23 @@ impl<'a> RansEnc<'a> {
 
         for i in (0..self.encode.len()).rev() {
             if let Some(sign) = sign_vals.pop() {
-                self.encoder.put_at(SIGN_CHANNEL,&sign_symbols[sign as usize]);
+                self.encoder.put_at(ENC_SIGN_CHANNEL,&sign_symbols[sign as usize]);
             }
             if let Some(exp) = exp_vals.pop() {
                 // println!("Exp Symbol: {:?}", exp );
-               self.encoder.put_at(EXPONENT_CHANNEL,&exp_symbols[exp as usize]);
+               self.encoder.put_at(ENC_EXPONENT_CHANNEL,&exp_symbols[exp as usize]);
             }
             if let Some(mant) = mant_vals.pop() {
-               match RansEnc::quantize_idx(mant) == MANT_ALPH_SIZE as u32 {
+                let mq_idx = RansEnc::quantize_idx(mant);
+               match mq_idx == MANT_ALPH_SIZE as u32 {
                    true => {
-                       self.encoder.put_at(MANTISSA_CHANNEL,&mant_symbols[MANT_ALPH_SIZE]);
+                       self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[MANT_ALPH_SIZE]);
                        raw_symbols.append(&mut mant.to_ne_bytes().to_vec());
                        out_range += 1;
                        println!("Out of range mantissa: {}", RansEnc::quantize_idx(mant));
                    },
                    false => {
-                       self.encoder.put_at(MANTISSA_CHANNEL,&mant_symbols[RansEnc::quantize_idx(mant) as usize]);
+                       self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[mq_idx as usize]);
                        in_range += 1;
                        println!("In range mantissa: {}", RansEnc::quantize_idx(mant));
                    }
@@ -310,15 +310,18 @@ impl<'a> RansEnc<'a> {
 
                 self.sign_context.increment_freq(sign as u32, i);
                 self.exponent_context.increment_freq(exponent as u32, i);
-                self.mantissa_context.increment_freq(RansEnc::quantize_idx(mantissa), i);
+
+
+                let mut mq_idx = RansEnc::quantize_idx(mantissa);
+            self.mantissa_context.increment_freq(mq_idx, i);
 
                 //NOTE! debug code:
-                let mut q_m = RansEnc::quantize_idx(mantissa);
-                if q_m == MANT_ALPH_SIZE as u32 {q_m = mantissa} else {q_m = q_m * STEP as u32}
+                // let mut q_m = RansEnc::quantize_idx(mantissa);
+                if mq_idx == MANT_ALPH_SIZE as u32 {mq_idx = mantissa} else {mq_idx = mq_idx * STEP as u32}
                 let bits =
                     ((sign as u32 & 0x1) << 31) |      // sign bit at bit 31
                         ((exponent as u32 & 0xFF) << 23) | // exponent in bits 23–30
-                        (q_m & 0x7F_FFFF);
+                        (mq_idx & 0x7F_FFFF);
                 let quantized_val = f32::from_bits(bits);
                 quantized.push(quantized_val);
                 //END! debug code
@@ -410,6 +413,9 @@ impl RansDecContext {
 
 }
 
+const DEC_SIGN_CHANNEl: usize = 2;
+const DEC_EXPONENT_CHANNEL: usize = 1;
+const DEC_MANTISSA_CHANNEL: usize = 0;
 pub struct RansDec<'a> {
     sign_context: RansDecContext,
     exponent_context: RansDecContext,
@@ -436,9 +442,9 @@ impl<'a> RansDec<'a> {
 
         println!("\nBeginning Decoding");
         for _ in 0..length {
-            let sign_cum_freq = self.decoder.get_at(2, SCALE_BIT);
-            let exp_cum_freq = self.decoder.get_at(EXPONENT_CHANNEL, SCALE_BIT);
-            let mant_cum_freq = self.decoder.get_at(0, SCALE_BIT);
+            let sign_cum_freq = self.decoder.get_at(DEC_SIGN_CHANNEl, SCALE_BIT);
+            let exp_cum_freq = self.decoder.get_at(DEC_EXPONENT_CHANNEL, SCALE_BIT);
+            let mant_cum_freq = self.decoder.get_at(DEC_MANTISSA_CHANNEL, SCALE_BIT);
             // println!("cumulative freq {:?} {:?} {:?}", sign_cum_freq, exp_cum_freq, mant_cum_freq);
 
             let sign_symbol = self.sign_context.freq_to_symbol[sign_cum_freq as usize];
@@ -448,18 +454,19 @@ impl<'a> RansDec<'a> {
             self.sign_context.increment_freq(sign_symbol);
             self.exponent_context.increment_freq(exp_symbol);
 
-            self.decoder.advance_at(SIGN_CHANNEL,&self.sign_context.symbols[sign_symbol], SCALE_BIT);
-            self.decoder.advance_at(EXPONENT_CHANNEL,&self.exponent_context.symbols[exp_symbol], SCALE_BIT);
-            self.decoder.advance_at(MANTISSA_CHANNEL,&self.mantissa_context.symbols[mant_symbol], SCALE_BIT);
+            self.decoder.advance_step_at(DEC_SIGN_CHANNEl,&self.sign_context.symbols[sign_symbol], SCALE_BIT);
+            self.decoder.advance_step_at(DEC_EXPONENT_CHANNEL,&self.exponent_context.symbols[exp_symbol], SCALE_BIT);
+            self.decoder.advance_step_at(DEC_MANTISSA_CHANNEL,&self.mantissa_context.symbols[mant_symbol], SCALE_BIT);
+            self.decoder.renorm_all();
 
-            println!("mant symbol {:?}", mant_symbol);
+            // println!("mant symbol {:?}", mant_symbol);
 
             //need to verify logic
             let mantissa: u32  = match mant_symbol == MANT_ALPH_SIZE  {
                 true => {
                     let val = u32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
                     self.raw_bytes.drain(self.raw_bytes.len() - 4..);
-                    println!("decoded out-of-range symbol: {:?}", val);
+                    // println!("decoded out-of-range symbol: {:?}", val);
                     val
 
                 },
@@ -475,7 +482,7 @@ impl<'a> RansDec<'a> {
             self.exponent_context.rebuild_histogram();
             self.mantissa_context.rebuild_histogram();
 
-            println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
+            // println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
 
             let bits =
                     ((sign_symbol as u32 & 0x1) << 31) |      // sign bit at bit 31
