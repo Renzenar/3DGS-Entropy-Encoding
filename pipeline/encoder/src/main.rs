@@ -60,11 +60,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
     // let total_bytes = 512 * 1024; // 512 KiB
-    let num_elements = scene.gaussians.len();
+    // let num_elements = scene.gaussians.len();
     let total_bytes = bytes_per_i32 * scene.gaussians.len();
-    // let num_elements = (1 << 16);
+    let num_elements = (1 << 16);
     // let num_elements = (1 << 14) - 10 ;
-    // let num_elements = 1024 * 2;
+    // let num_elements = 1024 * 9;
     // let num_elements = (1 << 14) - 240;
     // let num_elements = total_bytes / bytes_per_i32;
 
