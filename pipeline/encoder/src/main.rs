@@ -3,7 +3,7 @@ use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
 use rans_coding::{RansEnc, RansDec};
 // use rand::Rng;
-use deflate_coder::{compress_i32_vec, /*decompress_i32_vec*/};
+use deflate_coder::{compress_f32_vec, /*decompress_i32_vec*/};
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -112,36 +112,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // }
 
 
-    let (mut code, raw_bytes, quantized) = encoder.encode_values();
+    let (mut code, raw_bytes, mut quantized) = encoder.encode_values();
 
     println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
     println!("Adaptive rANS coded data size:      {:?}", code.len() + raw_bytes.len());
 
-    // let deflate_code = compress_i32_vec(data.clone())?;
-    // println!("DEFLATE (LZ77 + Huffman) code size: {:?}\n", deflate_code.len());
+    let deflate_code = compress_f32_vec(data.clone())?;
+    println!("DEFLATE (LZ77 + Huffman) code size: {:?}\n", deflate_code.len());
 
     //
     let data_size  = (data.len() * bytes_per_i32) as f32;
     let code_size = code.len() as f32 + raw_bytes.len() as f32;
-    // let deflate_code_size = deflate_code.len() as f32;
+    let deflate_code_size = deflate_code.len() as f32;
 
 
     let coded_improvement = ((data_size - code_size) / data_size) * 100f32;
-    // let deflate_code_improvement = ((deflate_code_size - code_size) / deflate_code_size) * 100f32;
+    let deflate_code_improvement = ((deflate_code_size - code_size) / deflate_code_size) * 100f32;
     //
     println!("Percent improvement my adaptive rANS data: {:?}", coded_improvement);
-    // println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
+    println!("Percent improvement vs DEFLATE:            {:?}", deflate_code_improvement);
     //
     //
     let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
     // //
     let res = decoder.decode_values(num_elements);
 
+    for i in 1 .. quantized.len() {
+        quantized[i] = quantized[i] + quantized[i - 1];
+    }
+
     // println!("{:?}", &data[ data.len() - 20.. data.len()]);
     // println!("{:?}", &res[res.len() - 20..res.len()]);
     // println!("Coded data: {:?}", code);
-    // println!("Decoded data: {:?}", res);
-    // println!("Original data: {:?}", data);
+    println!("Original data: {:?}", &data[..10]);
+    println!("Decoded data: {:?}", &res[..10]);
     assert_eq!(quantized, res);
 
 
