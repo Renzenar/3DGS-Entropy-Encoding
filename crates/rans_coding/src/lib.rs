@@ -5,9 +5,9 @@
  * Date Last Modified: 11/05/2025
  */
 
-use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoder, B64RansEncoderMulti};
-use rans::{RansEncSymbol, RansEncoder, RansEncoderMulti, RansDecoder, RansDecSymbol, RansDecoderMulti};
-use rans::b64_decoder::{B64RansDecoder, B64RansDecSymbol, B64RansDecoderMulti};
+use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoderMulti};
+use rans::{RansEncSymbol, RansEncoderMulti, RansDecSymbol, RansDecoderMulti};
+use rans::b64_decoder::{B64RansDecSymbol, B64RansDecoderMulti};
 use bv::BitVec;
 
 const SIGN_ALPH_SIZE : usize = 2;
@@ -196,7 +196,9 @@ impl<'a> RansEnc<'a> {
                 self.encoder.put_at(ENC_SIGN_CHANNEL,&sign_symbols[sign as usize]);
             }
             if let Some(exp) = exp_vals.pop() {
-                // println!("Exp Symbol: {:?}", exp );
+                if exp == 255 {
+                    println!("Exp Symbol: {:?} at idx {}", exp, i);
+                }
                self.encoder.put_at(ENC_EXPONENT_CHANNEL,&exp_symbols[exp as usize]);
             }
             if let Some(mant) = mant_vals.pop() {
@@ -493,11 +495,17 @@ impl<'a> RansDec<'a> {
             // println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
 
             let bits =
-                    ((sign_symbol as u32 & 0x1) << 31) |      // sign bit at bit 31
-                    ((exp_symbol as u32 & 0xFF) << 23) | // exponent in bits 23–30
+                    ((sign_symbol as u32 & 0x1) << 31) |
+                    ((exp_symbol as u32 & 0xFF) << 23) |
                     (mantissa & 0x7F_FFFF);
             let mut float = f32::from_bits(bits);
             if i > 0 {float = float + res[i - 1]}
+
+            if float.is_nan() {
+                println!("NAN FOUND AT INDEX {}", i);
+                println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
+                println!("prev symbol {}", res[i - 1]);
+                break;}
 
             res.push(float);
         }
