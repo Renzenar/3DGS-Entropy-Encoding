@@ -157,7 +157,6 @@ impl<'a> RansEnc<'a> {
     pub fn new(buffer_size: usize, encode: &'a Vec<f32>) -> Self {
         let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self {
-            //TODO determine correct alphabet sizes
             encode,
             sign_context: RansEncContext::new(SIGN_ALPH_SIZE),
             exponent_context: RansEncContext::new(EXP_ALPH_SIZE),
@@ -446,7 +445,7 @@ impl<'a> RansDec<'a> {
 
         println!("\nBeginning Decoding");
         let (mut num_esc, mut num_code) = (0, 0);
-        for _ in 0..length {
+        for i in 0..length {
             let sign_cum_freq = self.decoder.get_at(DEC_SIGN_CHANNEl, SCALE_BIT);
             let exp_cum_freq = self.decoder.get_at(DEC_EXPONENT_CHANNEL, SCALE_BIT);
             let mant_cum_freq = self.decoder.get_at(DEC_MANTISSA_CHANNEL, SCALE_BIT);
@@ -497,7 +496,8 @@ impl<'a> RansDec<'a> {
                     ((sign_symbol as u32 & 0x1) << 31) |      // sign bit at bit 31
                     ((exp_symbol as u32 & 0xFF) << 23) | // exponent in bits 23–30
                     (mantissa & 0x7F_FFFF);
-            let float = f32::from_bits(bits as u32);
+            let mut float = f32::from_bits(bits);
+            if i > 0 {float = float + res[i - 1]}
 
             res.push(float);
         }
