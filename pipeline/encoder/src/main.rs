@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let num_elements = scene.gaussians.len();
     let total_bytes = bytes_per_i32 * scene.gaussians.len();
     // let num_elements = (1 << 16) * 40;
-    // let num_elements = 1 << 20;
+    // let num_elements = (1 << 14) - 10 ;
     let num_elements = 10;
     // let num_elements = total_bytes / bytes_per_i32;
 
@@ -112,7 +112,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     let (mut code, raw_bytes, quantized) = encoder.encode_values();
-
 
     println!("Raw data size:                      {:?}", data.len() * bytes_per_i32);
     println!("Adaptive rANS coded data size:      {:?}", code.len() + raw_bytes.len());
