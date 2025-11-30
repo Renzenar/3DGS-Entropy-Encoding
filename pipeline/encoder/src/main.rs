@@ -60,9 +60,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
     // let total_bytes = 512 * 1024; // 512 KiB
-    // let num_elements = scene.gaussians.len();
+    let num_elements = scene.gaussians.len();
     let total_bytes = bytes_per_i32 * scene.gaussians.len();
-    let num_elements = (1 << 16);
+    // let num_elements = (1 << 16);
     // let num_elements = (1 << 14) - 10 ;
     // let num_elements = 10;
     // let num_elements = (1 << 14) - 250;
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Vec<f32> = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
-        let val = scene.gaussians.get(i).unwrap().xyz[0];
+        let val = scene.gaussians.get(i).unwrap().xyz[2];
         data.push(val);
     }
 
@@ -150,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
      println!("Decoded quantized data: {:?}", &res[res.len() - 10..]);
     // println!("Original  quantized data: {:?}", &quantized[..10]);
     // println!("Decoded quantized data: {:?}", &res[..10]);
-    // assert_eq!(quantized, res);
+    assert_eq!(quantized, res);
 
 
     Ok(())

@@ -110,13 +110,13 @@ impl RansEncContext {
 
     //might want to add this into component breakdown
     pub fn increment_freq(&mut self, val: u32, idx: usize, channel: usize){
+        self.context.increment_freq(val as usize);
         if self.context.rebuild_histogram() {
-            // println!("rebuilding histogram Encoder at channel {}", channel);
+            // println!("rebuilding histogram Encoder idx {} at channel {}",idx, channel);
             self.build_snapshot();
             self.context.rescale_model();
             self.rescale_location.push(idx);
         }
-        self.context.increment_freq(val as usize);
     }
 
     pub fn build_snapshot(&mut self) {
@@ -190,6 +190,31 @@ impl<'a> RansEnc<'a> {
         let (mut in_range, mut out_range) = (0,0);
 
         for i in (0..self.encode.len()).rev() {
+            if i == r_sign && i != 0 {
+                // println!("Rescaling Sign Context Model");
+                if let Some(idx) = self.sign_context.rescale_location.pop() {
+                    r_sign = idx;
+                }
+
+                sign_symbols = self.sign_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
+            }
+            if i == r_exp && i != 0 {
+                // println!("Rescaling Exponent Context Model");
+                if let Some(idx) = self.exponent_context.rescale_location.pop() {
+                    r_exp = idx;
+                }
+                exp_symbols = self.exponent_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
+            }
+            if i == r_mant && i != 0 {
+                // println!("Rescaling Mantissa Context Model");
+                if let Some(idx) = self.mantissa_context.rescale_location.pop() {
+                    r_mant = idx;
+                }
+                mant_symbols = self.mantissa_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
+            }
+
+
+
             if let Some(sign) = sign_vals.pop() {
                 self.encoder.put_at(ENC_SIGN_CHANNEL,&sign_symbols[sign as usize]);
             }
@@ -215,31 +240,6 @@ impl<'a> RansEnc<'a> {
                     }
                 }
             }
-
-
-            if i == r_sign && i != 0 {
-                // println!("Rescaling Sign Context Model");
-                if let Some(idx) = self.sign_context.rescale_location.pop() {
-                    r_sign = idx;
-                }
-
-                sign_symbols = self.sign_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
-            }
-            if i == r_exp && i != 0 {
-                // println!("Rescaling Exponent Context Model");
-                if let Some(idx) = self.exponent_context.rescale_location.pop() {
-                    r_exp = idx;
-                }
-                exp_symbols = self.exponent_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
-            }
-            if i == r_mant && i != 0 {
-                // println!("Rescaling Mantissa Context Model");
-                if let Some(idx) = self.mantissa_context.rescale_location.pop() {
-                    r_mant = idx;
-                }
-                mant_symbols = self.mantissa_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get context snapshot"));
-            }
-
         }
         println!("Completed Backward Pass\n");
         println!("Mantissa in range {:?}, Mantissas out of range {:?}", in_range, out_range);
@@ -385,9 +385,9 @@ impl RansDecContext {
     }
 
 
-    pub fn rebuild_histogram(&mut self, symbol: usize, channel: usize) {
+    pub fn rebuild_histogram(&mut self, symbol: usize, channel: usize, idx: usize) {
         if self.context.rebuild_histogram() {
-            // println!("rebuilding histogram Decoder {} for channel {}", self.context.total_freq, channel);
+            // println!("rebuilding histogram idx {} for channel {}", idx, channel);
             self.build_inverse_freq_table();
             self.context.rescale_model();
         }
@@ -460,6 +460,10 @@ impl<'a> RansDec<'a> {
 
 
 
+            // println!("mant symbol {:?}", mant_symbol);
+
+
+
             self.sign_context.increment_freq(sign_symbol);
             self.exponent_context.increment_freq(exp_symbol);
 
@@ -487,12 +491,9 @@ impl<'a> RansDec<'a> {
             self.decoder.advance_step_at(DEC_MANTISSA_CHANNEL,&self.mantissa_context.symbols[mant_symbol], SCALE_BIT);
             self.decoder.renorm_all();
 
-            // println!("mant symbol {:?}", mant_symbol);
-
-            self.sign_context.rebuild_histogram(sign_symbol, DEC_SIGN_CHANNEl);
-            self.exponent_context.rebuild_histogram(exp_symbol, DEC_EXPONENT_CHANNEL);
-            self.mantissa_context.rebuild_histogram(mant_symbol, DEC_MANTISSA_CHANNEL);
-
+            self.sign_context.rebuild_histogram(sign_symbol, DEC_SIGN_CHANNEl, i);
+            self.exponent_context.rebuild_histogram(exp_symbol, DEC_EXPONENT_CHANNEL, i);
+            self.mantissa_context.rebuild_histogram(mant_symbol, DEC_MANTISSA_CHANNEL, i);
 
             // println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
 
