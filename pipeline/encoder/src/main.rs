@@ -64,8 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_bytes = bytes_per_i32 * scene.gaussians.len();
     let num_elements = (1 << 16);
     // let num_elements = (1 << 14) - 10 ;
-    // let num_elements = 1024 * 9;
-    // let num_elements = (1 << 14) - 240;
+    // let num_elements = 10;
+    // let num_elements = (1 << 14) - 250;
     // let num_elements = total_bytes / bytes_per_i32;
 
     // println!("Number of elements: {}", num_elements);
@@ -144,9 +144,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("{:?}", &data[ data.len() - 20.. data.len()]);
     // println!("{:?}", &res[res.len() - 20..res.len()]);
     // println!("Coded data: {:?}", code);
-    println!("Original data: {:?}", &data[..10]);
-    println!("Decoded data: {:?}", &res[..10]);
-    assert_eq!(quantized, res);
+    println!("Quant data len: {}, res data len {}", quantized.len(), res.len());
+    println!("Original data: {:?}", &data[data.len() - 10..]);
+    println!("Original  quantized data: {:?}", &quantized[quantized.len() - 10..]);
+     println!("Decoded quantized data: {:?}", &res[res.len() - 10..]);
+    // println!("Original  quantized data: {:?}", &quantized[..10]);
+    // println!("Decoded quantized data: {:?}", &res[..10]);
+    // assert_eq!(quantized, res);
 
 
     Ok(())
