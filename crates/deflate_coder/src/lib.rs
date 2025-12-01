@@ -5,10 +5,10 @@ use std::io::{Read, Write};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Payload {
-    data: Vec<i32>,
+    data: Vec<f32>,
 }
 
-pub fn compress_i32_vec(input: Vec<i32>) -> anyhow::Result<Vec<u8>> {
+pub fn compress_f32_vec(input: Vec<f32>) -> anyhow::Result<Vec<u8>> {
     // 1) Serialize to bytes (endian-stable)
     let payload = Payload { data: input };
     let serialized = bincode::serialize(&payload)?; // Vec<u8>
@@ -20,7 +20,7 @@ pub fn compress_i32_vec(input: Vec<i32>) -> anyhow::Result<Vec<u8>> {
     Ok(compressed)
 }
 
-pub fn decompress_i32_vec(compressed: &[u8]) -> anyhow::Result<Vec<i32>> {
+pub fn decompress_i32_vec(compressed: &[u8]) -> anyhow::Result<Vec<f32>> {
     // 3) DEFLATE decompression
     let mut decoder = Decoder::new(compressed);
     let mut decompressed = Vec::new();

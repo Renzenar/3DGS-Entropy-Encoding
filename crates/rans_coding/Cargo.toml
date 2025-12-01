@@ -7,5 +7,6 @@ edition = "2024"
 lib = "src/lib.rs"
 
 [dependencies]
+bv = "0.11.1"
 fenwick = "2.0.1"
 rans = "0.4.0"

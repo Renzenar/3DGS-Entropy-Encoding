@@ -1,31 +1,34 @@
+use std::collections::HashMap;
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
 use rans_coding::{RansEnc, RansDec};
-use deflate_coder::compress_i32_vec; // decompress not needed here
+// use rand::Rng;
+use deflate_coder::{compress_f32_vec, /*decompress_i32_vec*/};
 
-fn encode_stream(data: &Vec<i32>) -> (Vec<u8>, Vec<u8>) {
+
+fn encode_stream(data: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<f32>) {
     // rough capacity based on input size
     let bytes_per_i32 = std::mem::size_of::<i32>();
     let est_bytes = data.len() * bytes_per_i32;
-    let mut encoder = RansEnc::new(est_bytes * 2);
+    let mut encoder = RansEnc::new(est_bytes * 2, data);
 
     // rANS encode single integer stream
-    encoder.encode_values(data)
+    encoder.encode_values()
 }
 
-fn delta_encode(v: &mut [i32]) {
-    if v.len() < 2 { return; }
-    for i in (1..v.len()).rev() {
-        v[i] = v[i] - v[i-1];
-    }
-}
-
-fn delta_decode(v: &mut [i32]) {
-    if v.len() < 2 { return; }
-    for i in 1..v.len() {
-        v[i] = v[i] + v[i-1];
-    }
-}
+// fn delta_encode(v: &mut [i32]) {
+//     if v.len() < 2 { return; }
+//     for i in (1..v.len()).rev() {
+//         v[i] = v[i] - v[i-1];
+//     }
+// }
+//
+// fn delta_decode(v: &mut [i32]) {
+//     if v.len() < 2 { return; }
+//     for i in 1..v.len() {
+//         v[i] = v[i] + v[i-1];
+//     }
+// }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load ply path from args
@@ -34,11 +37,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // load gaussian scene
     let mut scene = load_gaussians_from_ply(&path)?;
+
     let num_gaussians = scene.gaussians.len();
     println!("Loaded {} Gaussians", num_gaussians);
 
     // morton code generation
     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
+
     println!("min xyz = {:?}", scene.mins);
     println!("max xyz = {:?}", scene.maxes);
 
@@ -47,9 +52,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("sh_rest length per gaussian: {}", sh_rest_len);
 
     // position streams
-    let mut s_xyz_x: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_xyz_y: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_xyz_z: Vec<i32> = Vec::with_capacity(num_gaussians);
+    let mut s_xyz_x: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_xyz_y: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_xyz_z: Vec<f32> = Vec::with_capacity(num_gaussians);
 
     // normals streams (optional, presence + components)
     // let mut s_normals_present: Vec<i32> = Vec::with_capacity(num_gaussians);
@@ -58,30 +63,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let mut s_normals_z: Vec<i32> = Vec::with_capacity(num_gaussians);
 
     // spherical harmonics streams
-    let mut s_sh_dc_r: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_sh_dc_g: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_sh_dc_b: Vec<i32> = Vec::with_capacity(num_gaussians);
+    let mut s_sh_dc_r: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_sh_dc_g: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_sh_dc_b: Vec<f32> = Vec::with_capacity(num_gaussians);
 
     // opacity stream
-    let mut s_opacity: Vec<i32> = Vec::with_capacity(num_gaussians);
+    let mut s_opacity: Vec<f32> = Vec::with_capacity(num_gaussians);
 
     // scale streams
-    let mut s_scale_x: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_scale_y: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_scale_z: Vec<i32> = Vec::with_capacity(num_gaussians);
+    let mut s_scale_x: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_scale_y: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_scale_z: Vec<f32> = Vec::with_capacity(num_gaussians);
 
     // rotation quaternion streams
-    let mut s_rot_x: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_rot_y: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_rot_z: Vec<i32> = Vec::with_capacity(num_gaussians);
-    let mut s_rot_w: Vec<i32> = Vec::with_capacity(num_gaussians);
+    let mut s_rot_x: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_rot_y: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_rot_z: Vec<f32> = Vec::with_capacity(num_gaussians);
+    let mut s_rot_w: Vec<f32> = Vec::with_capacity(num_gaussians);
 
     // convert all gaussian fields to i32 streams (float cast)
     for g in &scene.gaussians {
         // xyz -> three streams
-        s_xyz_x.push(g.xyz[0] as i32);
-        s_xyz_y.push(g.xyz[1] as i32);
-        s_xyz_z.push(g.xyz[2] as i32);
+        s_xyz_x.push(g.xyz[0]);
+        s_xyz_y.push(g.xyz[1]);
+        s_xyz_z.push(g.xyz[2]);
 
         // normals -> presence + three component streams
         // if let Some(n) = g.normals {
@@ -97,27 +102,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // }
 
         // sh dc -> 3 streams
-        s_sh_dc_r.push(g.sh_dc[0] as i32);
-        s_sh_dc_g.push(g.sh_dc[1] as i32);
-        s_sh_dc_b.push(g.sh_dc[2] as i32);
+        s_sh_dc_r.push(g.sh_dc[0]);
+        s_sh_dc_g.push(g.sh_dc[1]);
+        s_sh_dc_b.push(g.sh_dc[2]);
 
         // opacity -> single stream
-        s_opacity.push(g.opacity as i32);
+        s_opacity.push(g.opacity);
 
         // scale -> 3 streams (log-scales as-is)
-        s_scale_x.push(g.scale[0] as i32);
-        s_scale_y.push(g.scale[1] as i32);
-        s_scale_z.push(g.scale[2] as i32);
+        s_scale_x.push(g.scale[0]);
+        s_scale_y.push(g.scale[1]);
+        s_scale_z.push(g.scale[2]);
 
         // rotation quaternion -> 4 streams
-        s_rot_x.push(g.rot[0] as i32);
-        s_rot_y.push(g.rot[1] as i32);
-        s_rot_z.push(g.rot[2] as i32);
-        s_rot_w.push(g.rot[3] as i32);
+        s_rot_x.push(g.rot[0]);
+        s_rot_y.push(g.rot[1]);
+        s_rot_z.push(g.rot[2]);
+        s_rot_w.push(g.rot[3]);
     }
 
     // vector to store streams
-    let mut streams: Vec<(&'static str, Vec<i32>)> = Vec::new();
+    let mut streams: Vec<(&'static str, Vec<f32>)> = Vec::new();
 
     // add position streams
     streams.push(("xyz_x", s_xyz_x));
@@ -152,12 +157,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Number of integer streams: {}", streams.len());
 
     // flatten all integer data for a deflate baseline
-    let mut flat_data: Vec<i32> = Vec::new();
+    let mut flat_data: Vec<f32> = Vec::new();
     for (_, s) in &streams {
         flat_data.extend_from_slice(s);
     }
 
     let bytes_per_i32 = std::mem::size_of::<i32>();
+
     let total_input_bytes = flat_data.len() * bytes_per_i32;
 
     println!("Total integer symbols: {}", flat_data.len());
@@ -167,14 +173,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encoded: Vec<(&str, Vec<u8>, Vec<u8>, usize)> = Vec::new();
     let mut total_rans_bytes: usize = 0;
 
+    let mut quantized : Vec<Vec<f32>> = Vec::new();
+
     for (name, original) in &streams {
         let mut data = original.clone();
-        delta_encode(&mut data);
-        let (mut code, raw_bytes) = encode_stream(&data);
+        let (mut code, raw_bytes, mut quantized_bytes) = encode_stream(&data);
 
-        let mn = data.iter().min().unwrap();
-        let mx = data.iter().max().unwrap();
-        println!("{} delta range = [{}, {}]", name, mn, mx);
+
+        // let mn = data.iter().min().unwrap();
+        // let mx = data.iter().max().unwrap();
+        // println!("{} delta range = [{}, {}]", name, mn, mx)
+        //
+        for i in 1 .. quantized_bytes.len() {
+                quantized_bytes[i] = quantized_bytes[i] + quantized_bytes[i - 1];
+            };
+        quantized.push(quantized_bytes);
 
         let stream_size = code.len() + raw_bytes.len();
         total_rans_bytes += stream_size;
@@ -212,13 +225,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (idx, (name, mut code, raw_bytes, len)) in encoded.into_iter().enumerate() {
         println!("{}", name);
         let mut decoder = RansDec::new(code.as_mut_slice(), raw_bytes);
-        let mut decoded = decoder.decode_values(len);
+        let decoded = decoder.decode_values(len);
 
-        delta_decode(&mut decoded);
 
-        let mut original = &streams[idx].1;
-        assert_eq!(decoded, *original);
-        if decoded != *original {
+        let mut quantized = &quantized[idx];
+        assert_eq!(decoded, *quantized);
+        if decoded != *quantized {
             println!("STREAM MISMATCH: {}", name);
         }
     }
