@@ -12,11 +12,12 @@ use bv::BitVec;
 
 const SIGN_ALPH_SIZE : usize = 2;
 const EXP_ALPH_SIZE : usize = 1 << 8;
-const MANT_ALPH_SIZE: usize = 257;
-const SCALE_BIT: u32 = 14;
-const MAX_ERR : i32 = 15_000;
-const STEP : f32 = (1 << 15) as f32;
+const SCALE_BIT: u32 = 16;
+// const MAX_ERR : i32 = 15_000;
+const MAX_ERR : i32 = 100;
+const STEP : f32 = (1 << 8) as f32;
 
+const MANT_ALPH_SIZE: usize = ((1 << 23) / STEP as usize) + 1;
 struct Context {
     alphabet_len: usize,
     freq: Vec<u16>,
@@ -40,9 +41,6 @@ impl Context {
             }
     }
 
-    //TODO: consider whether we should "adapt" aka increment frequency of the escape symbol
-    //may not matter much. May be better determined with testing
-    //currently we do not increment the escape character
     pub fn increment_freq(&mut self, idx: usize) {
             self.freq[idx] += 1;
             self.total_freq += 1;
@@ -83,13 +81,7 @@ struct RansEncContext {
 
 /**
  * Description: RansEnc implements the rans encoder and all necessary methods. 
- * The encoder performs two passe
-                println!("Sign Symbol: {:?}", sign_symbols[sign as usize]);
-                self.encoder.put_at(SIGN_CHANNEL,&sign_symbols[sign as usize]);
-            }
-            if let Some(exp) = exp_vals.pop() {
-               self.encoder.put_at(EXPONENT_CHANNEL,&exp_symbols[exp as usize]);
-            }s
+ * The encoder performs two passes
  * Forward Pass:
  *  - tallies raw counts and rebuilds a normalized frequency table whenever the context model's
  *    total_frequency is equal to 2^SCALE_BIT
@@ -503,12 +495,6 @@ impl<'a> RansDec<'a> {
                     (mantissa & 0x7F_FFFF);
             let mut float = f32::from_bits(bits);
             if i > 0 {float = float + res[i - 1]}
-
-            if float.is_nan() {
-                println!("NAN FOUND AT INDEX {}", i);
-                println!("Decoded symbol: {:?} {:?} {:?}", sign_symbol as u32, exp_symbol, mantissa);
-                println!("prev symbol {}", res[i - 1]);
-                break;}
 
             res.push(float);
         }

@@ -3,5 +3,6 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/crates/deflate_coder" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/pipeline/decoder" vcs="Git" />
   </component>
 </project>
