@@ -296,7 +296,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut decoded = decoder.decode_values(scene_len as usize);
         delta_decode(&mut decoded);
 
-        if idx < 6  {
+        if idx < 3  {
             decoded_gaus[idx] = decoded.clone();
         }
 
