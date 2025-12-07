@@ -207,6 +207,7 @@ dependencies = [
  "deflate_coder",
  "gaussian_parser",
  "gaussian_sorter",
+ "gaussian_types",
  "rand",
  "rans_coding",
 ]

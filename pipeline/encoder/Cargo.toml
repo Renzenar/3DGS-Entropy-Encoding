@@ -7,6 +7,7 @@ edition = "2024"
 gaussian_parser = {path = "../../crates/gaussian_parser" }
 gaussian_sorter = {path = "../../crates/gaussian_sorter"}
 rans_coding = {path = "../../crates/rans_coding"}
+gaussian_types = {path = "../../crates/gaussian_types"}
 deflate_coder = {path = "../../crates/deflate_coder"}
 decoder = {path = "../decoder"}
 rand = "0.10.0-rc.0"

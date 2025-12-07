@@ -7,6 +7,7 @@ use rans_coding::{RansEnc, RansDec};
 use decoder::{EncodedAttribute, read_gaussian_from_gsz, write_gaussians_to_ply};
 // use rand::Rng;
 use deflate_coder::{compress_f32_vec, /*decompress_i32_vec*/};
+use gaussian_types::Gaussian;
 
 
 fn encode_stream(data: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<f32>) {
@@ -32,6 +33,120 @@ fn delta_decode(v: &mut [f32]) {
         v[i] = v[i] + v[i-1];
     }
 }
+
+//CHAT WROTE THESE BELOW
+
+/// Convert a unit (or nearly-unit) quaternion (w, x, y, z) to a 3x3 rotation matrix.
+/// Returns R such that v_world = R * v_local.
+fn quat_to_mat3(w: f32, x: f32, y: f32, z: f32) -> [[f32; 3]; 3] {
+    // Normalize in case it's slightly off unit length
+    let norm2 = w*w + x*x + y*y + z*z;
+    let (w, x, y, z) = if norm2 > 0.0 {
+        let inv_norm = 1.0 / norm2.sqrt();
+        (w * inv_norm, x * inv_norm, y * inv_norm, z * inv_norm)
+    } else {
+        // Degenerate case: identity rotation
+        return [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
+    };
+
+    [
+        [
+            1.0 - 2.0 * (y*y + z*z),
+            2.0 * (x*y - z*w),
+            2.0 * (x*z + y*w),
+        ],
+        [
+            2.0 * (x*y + z*w),
+            1.0 - 2.0 * (x*x + z*z),
+            2.0 * (y*z - x*w),
+        ],
+        [
+            2.0 * (x*z - y*w),
+            2.0 * (y*z + x*w),
+            1.0 - 2.0 * (x*x + y*y),
+        ],
+    ]
+}
+
+/// Given:
+/// - rotation quaternion in (w, x, y, z) order
+/// - 3DGS log-scale vector (scale_x, scale_y, scale_z)
+/// returns the world-axis standard deviations (σ_world_x, σ_world_y, σ_world_z).
+///
+/// This uses Σ = R * diag(σ^2) * R^T and then
+/// var_j = Σ_jj, σ_world_j = sqrt(var_j).
+pub fn world_axis_scales_from_quat_and_log_scale(
+    rotation: [f32; 4],   // [w, x, y, z]
+    log_scale: [f32; 3],  // stored 3DGS scale
+) -> [f32; 3] {
+    let [w, x, y, z] = rotation;
+    let r = quat_to_mat3(w, x, y, z);
+
+    // Local standard deviations σ = exp(scale)
+    let sigma = [
+        log_scale[0].exp(),
+        log_scale[1].exp(),
+        log_scale[2].exp(),
+    ];
+
+    let sigma2 = [
+        sigma[0] * sigma[0],
+        sigma[1] * sigma[1],
+        sigma[2] * sigma[2],
+    ];
+
+    // For each world axis j, var_j = sum_k (R_jk^2 * σ_k^2)
+    let mut world_sigma = [0.0f32; 3];
+
+    for j in 0..3 {
+        let rj0 = r[j][0];
+        let rj1 = r[j][1];
+        let rj2 = r[j][2];
+
+        let var_j =
+            rj0 * rj0 * sigma2[0] +
+                rj1 * rj1 * sigma2[1] +
+                rj2 * rj2 * sigma2[2];
+
+        world_sigma[j] = var_j.max(0.0).sqrt(); // guard against tiny negative due to FP
+    }
+
+    world_sigma
+}
+///Position Prediction Function
+//x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]) * (s_i / s_{i-1});
+fn pred_func(axis: usize, idx: usize, gs: &Vec<Gaussian>) -> f32{
+    let world_scale_cur = world_axis_scales_from_quat_and_log_scale(
+        gs[idx].rot,
+        gs[idx].scale,
+    );
+    let world_scale_prev = world_axis_scales_from_quat_and_log_scale(
+        gs[idx - 1].rot,
+        gs[idx - 1].scale,
+    );
+    let scale_rat = world_scale_cur[axis] / world_scale_prev[axis];
+    let pred = gs[idx -1].xyz[axis] +(gs[idx - 1].xyz[axis] - gs[idx - 2].xyz[axis]) * scale_rat;
+
+    pred
+}
+
+fn delta_encode_pos(gs: &mut Vec<Gaussian>) {
+    if gs.len() < 3 { return; }
+    for i in (2..gs.len()).rev() {
+        let pred_x = get_pos_pred(0, i, gs);
+        gs[i].xyz[0] = gs[i].xyz[0] - pred_x;
+        let pred_y = get_pos_pred(1, i, gs);
+        gs[i].xyz[1] = gs[i].xyz[1] - pred_y;
+        let pred_z = get_pos_pred(2, i, gs);
+        gs[i].xyz[2] = gs[i].xyz[2] - pred_z;
+    }
+}
+
+//TODO decode function
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load ply path from args
