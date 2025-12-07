@@ -14,8 +14,8 @@ const SIGN_ALPH_SIZE : usize = 2;
 const EXP_ALPH_SIZE : usize = 1 << 8;
 const SCALE_BIT: u32 = 16;
 // const MAX_ERR : i32 = 15_000;
-const MAX_ERR : i32 = 250;
-const STEP : f32 = (1 << 9) as f32;
+const MAX_ERR : i32 = 100;
+const STEP : f32 = (1 << 8) as f32;
 const MANT_ALPH_SIZE: usize = ((1 << 23) / STEP as usize) + 1;
 struct Context {
     freq: Vec<u16>,

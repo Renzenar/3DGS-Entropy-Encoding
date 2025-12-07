@@ -250,9 +250,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let deflate_code = compress_i32_vec(flat_data.clone())?;
     // let deflate_bytes = deflate_code.len();
     // println!("DEFLATE (LZ77 + Huffman) code size: {} bytes\n", deflate_bytes);
-    let input_f = total_input_bytes as f32;
-    let rans_f = total_rans_bytes as f32;
+    // let input_f = total_input_bytes as f32;
+    // let rans_f = total_rans_bytes as f32;
     // let deflate_f = deflate_bytes as f32;
+
+    let input_f = ((s_xyz_x.len() + s_xyz_y.len() + s_xyz_z.len()) * size_of::<f32>()) as f32;
+    let rans_f = (encoded[0].1.len() + encoded[0].2.len() +
+        encoded[1].1.len() + encoded[1].2.len() +
+        encoded[2].1.len() + encoded[2].2.len())
+        as f32;
     //
     let rans_vs_raw = (input_f - rans_f) / input_f * 100.0;
     // let rans_vs_deflate = (deflate_f - rans_f) / deflate_f * 100.0;
@@ -261,6 +267,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Percent improvement rANS vs raw:      {:.2} %",
         rans_vs_raw
     );
+
+
+
     // println!(
     //     "Percent improvement rANS vs DEFLATE: {:.2} %",
     //     rans_vs_deflate
@@ -322,6 +331,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("Original First 5: {:?}", &s_xyz_x[0..5]);
     println!("Decoded Last 5: {:?}", &decoded_gaus[0][decoded_gaus[0].len()-5..]);
     // println!("Decoded First 5: {:?}", &decoded_gaus[0][0..5]);
+
 
     Ok(())
 }
