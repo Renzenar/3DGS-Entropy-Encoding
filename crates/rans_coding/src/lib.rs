@@ -16,10 +16,8 @@ const SCALE_BIT: u32 = 16;
 // const MAX_ERR : i32 = 15_000;
 const MAX_ERR : i32 = 100;
 const STEP : f32 = (1 << 8) as f32;
-
 const MANT_ALPH_SIZE: usize = ((1 << 23) / STEP as usize) + 1;
 struct Context {
-    alphabet_len: usize,
     freq: Vec<u16>,
     total_freq: usize,
 }
@@ -35,7 +33,7 @@ impl Context {
     //the last index [length] will be the escape symbol
     //NOTE: alphabet_len must be factor of 2 (I should probably enforce this somehow)
     pub fn new(alphabet_len: usize) -> Self {
-        Self{ alphabet_len,
+        Self{
             freq: vec![1; alphabet_len],
             total_freq: alphabet_len,
             }
@@ -76,7 +74,6 @@ struct RansEncContext {
     //consider turning this into a single flat index, for now this is proof of concept
     //would probably have to communicate how many partitions there are with each data stream
     rescale_location: Vec<usize>,
-    alphabet_len: usize,
 }
 
 /**
@@ -97,14 +94,13 @@ struct RansEncContext {
 impl RansEncContext {
     pub fn new(alphabet_len: usize) -> Self {
         let context = Context::new(alphabet_len);
-        Self { context, snapshots: vec![], rescale_location: vec![], alphabet_len}
+        Self { context, snapshots: vec![], rescale_location: vec![] }
     }
 
     //might want to add this into component breakdown
     pub fn increment_freq(&mut self, val: u32, idx: usize, channel: usize){
         self.context.increment_freq(val as usize);
         if self.context.rebuild_histogram() {
-            // println!("rebuilding histogram Encoder idx {} at channel {}",idx, channel);
             self.build_snapshot();
             self.context.rescale_model();
             self.rescale_location.push(idx);
@@ -116,7 +112,6 @@ impl RansEncContext {
             .scan(0u32, |acc, &x|{
                 let val = *acc;
                 *acc += x as u32;
-                // println!("new FREQ: {}", x);
                 Some((val, x))
             }).map(|(cum_freq, freq)|
             B64RansEncSymbol::new(
@@ -127,7 +122,6 @@ impl RansEncContext {
         ).collect();
 
         self.snapshots.push(res);
-        // println!("build snapshot");
     }
 
 }
@@ -256,80 +250,38 @@ impl<'a> RansEnc<'a> {
         self.exponent_context.build_snapshot();
         self.mantissa_context.build_snapshot();
 
-        //first value not delta coded
-        if let Some(val) = self.encode.first() {
-            let bits = val.to_bits();
+        for (i,res)  in self.encode.iter().enumerate() {
 
-            let sign = ((bits >> 31) & 1) != 0;
+            let bits = res.to_bits();
+
+            let sign :bool = ((bits >> 31) & 1) != 0;
             let exponent = ((bits >> 23) & 0xFF) as u8;
             let mantissa = bits & 0x7F_FFFF;
 
-            //right will definetly need to figure out
-            self.sign_context.increment_freq(sign as u32, 0, ENC_SIGN_CHANNEL);
-            self.exponent_context.increment_freq(exponent as u32, 0, ENC_EXPONENT_CHANNEL);
+            self.sign_context.increment_freq(sign as u32, i, ENC_SIGN_CHANNEL);
+            self.exponent_context.increment_freq(exponent as u32, i, ENC_EXPONENT_CHANNEL);
+
 
             let mut mq_idx = RansEnc::quantize_idx(mantissa);
             if mq_idx < MANT_ALPH_SIZE as u32 {
-                self.mantissa_context.increment_freq(mq_idx, 0, ENC_MANTISSA_CHANNEL);
+                self.mantissa_context.increment_freq(mq_idx, i, ENC_MANTISSA_CHANNEL);
             }
 
             //NOTE! debug code:
+            // let mut q_m = RansEnc::quantize_idx(mantissa);
             if mq_idx == MANT_ALPH_SIZE as u32 {mq_idx = mantissa} else {mq_idx = mq_idx * STEP as u32}
             let bits =
-                    ((sign as u32 & 0x1) << 31) |      // sign bit at bit 31
+                ((sign as u32 & 0x1) << 31) |      // sign bit at bit 31
                     ((exponent as u32 & 0xFF) << 23) | // exponent in bits 23–30
                     (mq_idx & 0x7F_FFFF);
             let quantized_val = f32::from_bits(bits);
             quantized.push(quantized_val);
             //END! debug code
 
-
             signs.push(sign);
             exponents.push(exponent);
-            mantissa_bits.push(mantissa);
-        }
-
-        //delta code exponent and mantissa of remaining values
-        if self.encode.len() > 1 {
-            println!("Beginning Delta Coding");
-            for i  in 1..self.encode.len() {
-                let residual  = (self.encode[i] - self.encode[i - 1]);
-
-
-                let bits = residual.to_bits();
-
-                let sign :bool = ((bits >> 31) & 1) != 0;
-                let exponent = ((bits >> 23) & 0xFF) as u8;
-                let mantissa = bits & 0x7F_FFFF;
-
-                self.sign_context.increment_freq(sign as u32, i, ENC_SIGN_CHANNEL);
-                self.exponent_context.increment_freq(exponent as u32, i, ENC_EXPONENT_CHANNEL);
-
-
-                let mut mq_idx = RansEnc::quantize_idx(mantissa);
-                if mq_idx < MANT_ALPH_SIZE as u32 {
-                    self.mantissa_context.increment_freq(mq_idx, i, ENC_MANTISSA_CHANNEL);
-                }
-                // else {
-                //     println!("Mantissa out of range: {}", mq_idx);
-                // }
-
-                //NOTE! debug code:
-                // let mut q_m = RansEnc::quantize_idx(mantissa);
-                if mq_idx == MANT_ALPH_SIZE as u32 {mq_idx = mantissa} else {mq_idx = mq_idx * STEP as u32}
-                let bits =
-                    ((sign as u32 & 0x1) << 31) |      // sign bit at bit 31
-                        ((exponent as u32 & 0xFF) << 23) | // exponent in bits 23–30
-                        (mq_idx & 0x7F_FFFF);
-                let quantized_val = f32::from_bits(bits);
-                quantized.push(quantized_val);
-                //END! debug code
-
-                signs.push(sign);
-                exponents.push(exponent);
-                mantissa_bits.push(mantissa) ;
-            };
-        }
+            mantissa_bits.push(mantissa) ;
+        };
 
         println!("Completed Forward Pass\n");
 
@@ -493,10 +445,8 @@ impl<'a> RansDec<'a> {
                     ((sign_symbol as u32 & 0x1) << 31) |
                     ((exp_symbol as u32 & 0xFF) << 23) |
                     (mantissa & 0x7F_FFFF);
-            let mut float = f32::from_bits(bits);
-            if i > 0 {float = float + res[i - 1]}
 
-            res.push(float);
+            res.push(f32::from_bits(bits));
         }
 
         // println!("Decoded esc {} and coded {} ", num_esc, num_code);

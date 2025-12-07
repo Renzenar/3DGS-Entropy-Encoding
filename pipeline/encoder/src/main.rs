@@ -19,19 +19,19 @@ fn encode_stream(data: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<f32>) {
     encoder.encode_values()
 }
 
-// fn delta_encode(v: &mut [i32]) {
-//     if v.len() < 2 { return; }
-//     for i in (1..v.len()).rev() {
-//         v[i] = v[i] - v[i-1];
-//     }
-// }
-//
-// fn delta_decode(v: &mut [i32]) {
-//     if v.len() < 2 { return; }
-//     for i in 1..v.len() {
-//         v[i] = v[i] + v[i-1];
-//     }
-// }
+fn delta_encode(v: &mut [f32]) {
+    if v.len() < 2 { return; }
+    for i in (1..v.len()).rev() {
+        v[i] = v[i] - v[i-1];
+    }
+}
+
+fn delta_decode(v: &mut [f32]) {
+    if v.len() < 2 { return; }
+    for i in 1..v.len() {
+        v[i] = v[i] + v[i-1];
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load ply path from args
@@ -190,11 +190,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (name, original) in &streams {
         let mut data = original.clone();
-        let (mut code, raw_bytes, mut quantized_bytes) = encode_stream(&data);
+        delta_encode(&mut data);
+        println!("Delta coding complete: {:?}", &data[0..10]);
+        let (mut code, raw_bytes, quantized_bytes) = encode_stream(&data);
 
-        for i in 1 .. quantized_bytes.len() {
-                quantized_bytes[i] = quantized_bytes[i] + quantized_bytes[i - 1];
-            };
         quantized.push(quantized_bytes);
 
         let stream_size = code.len() + raw_bytes.len();
@@ -294,13 +293,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (idx, mut data) in coded_data.into_iter().enumerate() {
         // println!("{}", name);
         let mut decoder = RansDec::new(data.coded.as_mut_slice(), data.raw);
-        let decoded = decoder.decode_values(scene_len as usize);
+        let mut decoded = decoder.decode_values(scene_len as usize);
+        delta_decode(&mut decoded);
 
         if idx < 6  {
             decoded_gaus[idx] = decoded.clone();
         }
 
-        let quantize = &quantized[idx];
+        let mut quantize = quantized[idx].clone();
+        println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
+        delta_decode(&mut quantize);
         assert_eq!(decoded, *quantize);
         // println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
         // println!("Decoded stream {}: {:?}", idx, decoded.len());
@@ -311,16 +313,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
 
-
-
-
     let path = "./output/truck_decoded.ply";
     write_gaussians_to_ply(&path, &decoded_gaus, scene_len)?;
 
 
     println!("\n\n Total Drift");
     println!("Original Last 5: {:?}", &s_xyz_x[s_xyz_x.len()-5..]);
+    // println!("Original First 5: {:?}", &s_xyz_x[0..5]);
     println!("Decoded Last 5: {:?}", &decoded_gaus[0][decoded_gaus[0].len()-5..]);
+    // println!("Decoded First 5: {:?}", &decoded_gaus[0][0..5]);
 
     Ok(())
 }
