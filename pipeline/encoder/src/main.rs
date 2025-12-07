@@ -119,7 +119,8 @@ pub fn world_axis_scales_from_quat_and_log_scale(
 }
 ///Position Prediction Function
 //x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]) * (s_i / s_{i-1});
-fn pred_func(axis: usize, idx: usize, gs: &Vec<Gaussian>) -> f32{
+//TODO generalize
+fn pos_pred_func(axis: usize, idx: usize, gs: &Vec<Gaussian>) -> f32{
     let world_scale_cur = world_axis_scales_from_quat_and_log_scale(
         gs[idx].rot,
         gs[idx].scale,
@@ -137,16 +138,16 @@ fn pred_func(axis: usize, idx: usize, gs: &Vec<Gaussian>) -> f32{
 fn delta_encode_pos(gs: &mut Vec<Gaussian>) {
     if gs.len() < 3 { return; }
     for i in (2..gs.len()).rev() {
-        let pred_x = get_pos_pred(0, i, gs);
+        let pred_x = pos_pred_func(0, i, gs);
         gs[i].xyz[0] = gs[i].xyz[0] - pred_x;
-        let pred_y = get_pos_pred(1, i, gs);
+        let pred_y = pos_pred_func(1, i, gs);
         gs[i].xyz[1] = gs[i].xyz[1] - pred_y;
-        let pred_z = get_pos_pred(2, i, gs);
+        let pred_z = pos_pred_func(2, i, gs);
         gs[i].xyz[2] = gs[i].xyz[2] - pred_z;
     }
 }
 
-//TODO decode function
+//TODO decode function inverse of above
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load ply path from args
