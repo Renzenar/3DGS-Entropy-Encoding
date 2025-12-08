@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use gaussian_parser::load_gaussians_from_ply;
@@ -34,7 +34,20 @@ fn delta_decode(v: &mut [f32]) {
     }
 }
 
-//CHAT WROTE THESE BELOW
+fn second_order_delta_encode(v: &mut [f32]) {
+    if v.len() < 3 { return; }
+    for i in (2..v.len()).rev() {
+        v[i] = v[i] - (v[i-1] + (v[i-1] - v[i-2]));
+    }
+}
+
+fn second_order_delta_decode(v: &mut [f32]) {
+    if v.len() < 3 { return; }
+    for i in 2..v.len() {
+        v[i] = v[i] + (v[i-1] + (v[i-1] - v[i-2]));
+    }
+}
+
 
 /// Convert a unit (or nearly-unit) quaternion (w, x, y, z) to a 3x3 rotation matrix.
 /// Returns R such that v_world = R * v_local.
@@ -131,9 +144,16 @@ fn pos_pred_func(axis: usize, idx: usize, gs: &Vec<Gaussian>) -> f32{
     );
     let scale_rat = world_scale_cur[axis] / world_scale_prev[axis];
     let pred = gs[idx -1].xyz[axis] +(gs[idx - 1].xyz[axis] - gs[idx - 2].xyz[axis]) * scale_rat;
+    // let pred = gs[idx -1].xyz[axis] +(gs[idx - 1].xyz[axis] - gs[idx - 2].xyz[axis]);
+    // let pred = gs[idx -1].xyz[axis] * scale_rat;
 
     pred
 }
+
+
+// pos_pred_func(
+//
+// )
 
 fn delta_encode_pos(gs: &mut Vec<Gaussian>) {
     if gs.len() < 3 { return; }
@@ -147,7 +167,102 @@ fn delta_encode_pos(gs: &mut Vec<Gaussian>) {
     }
 }
 
-//TODO decode function inverse of above
+pub fn mean_std_u32(values: &Vec<u32>) -> (f64, f64) {
+    let n = values.len();
+    if n == 0 {
+        return (0.0, 0.0);
+    }
+
+    // Compute mean
+    let sum: f64 = values.iter().map(|&v| v as f64).sum();
+    let mean = sum / n as f64;
+
+    // Compute variance
+    let var_sum: f64 = values.iter()
+        .map(|&v| {
+            let diff = v as f64 - mean;
+            diff * diff
+        })
+        .sum();
+
+    let variance = var_sum / n as f64; // population variance
+    let std_dev = variance.sqrt();
+
+    (mean, std_dev)
+}
+
+
+
+// fn main() -> Result<(), Box<dyn std::error::Error>> {
+//     let path: String = std::env::args().nth(1).expect("Missing .ply file path");
+//     println!("Input PLY: {}", path);
+//
+//     // load gaussian scene
+//     let mut scene = load_gaussians_from_ply(&path)?;
+//
+//     let num_gaussians = scene.gaussians.len();
+//     println!("Loaded {} Gaussians", num_gaussians);
+//
+//     // morton code generation
+//     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
+//
+//     delta_encode_pos(&mut scene.gaussians);
+//
+//     let mut data_x : Vec<f32> = scene.gaussians.iter().map(|x| x.xyz[0]).collect();
+//     let mut data_y : Vec<f32> = scene.gaussians.iter().map(|x| x.xyz[1]).collect();
+//     let mut data_z : Vec<f32> = scene.gaussians.iter().map(|x| x.xyz[2]).collect();
+//
+//     delta_encode(&mut data_z);
+//
+//     let mant_data_x = data_x.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
+//     let mant_data_y = data_y.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
+//     let mant_data_z = data_z.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
+//
+//     let mut min_delta = mant_data_z[0];
+//     let mut max_delta = min_delta;
+//     let mut delta_alph_set : HashSet<u32> = HashSet::new();
+//     delta_alph_set.insert(min_delta);
+//
+//     for i in 1..data_z.len() {
+//         let mant = mant_data_z[i];
+//         if mant < min_delta { min_delta = mant; }
+//         if mant > max_delta { max_delta = mant; }
+//         delta_alph_set.insert(mant);
+//     }
+//
+//     let (mean_delta, std_dev_delta) = mean_std_u32(&mant_data_z);
+//     println!("min delta: {}, max delta: {}", min_delta, max_delta);
+//     println!("mean delta: {}, std dev delta: {}", mean_delta, std_dev_delta);
+//     println!("delta alph set size: {}", delta_alph_set.len());
+//     println!();
+//
+//     let mant_gs_x = scene.gaussians.iter().map(|x| x.xyz[0].to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
+//     let mant_gs_y = scene.gaussians.iter().map(|x| x.xyz[1].to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
+//     let mant_gs_z = scene.gaussians.iter().map(|x| x.xyz[2].to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
+//
+//     let mut min_size = mant_gs_z[0];
+//     let mut max_size = min_delta;
+//     let mut size_alph : HashSet<u32> = HashSet::new();
+//     size_alph.insert(min_size);
+//     for i in 1..scene.gaussians.len() {
+//         let mant = mant_gs_z[i];
+//         if mant < min_size { min_size = mant; }
+//         if mant > max_size { max_size = mant; }
+//         size_alph.insert(mant);
+//     }
+//
+//     let (mean, std_dev) = mean_std_u32(&mant_gs_z);
+//
+//     println!("min size: {}, max size: {}", min_size, max_size);
+//     println!("mean size: {}, std dev size: {}", mean, std_dev);
+//     println!("size alph set size: {}", size_alph.len());
+//
+//
+//     Ok(())
+// }
+//
+
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load ply path from args
@@ -304,9 +419,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut quantized : Vec<Vec<f32>> = Vec::new();
 
+
+    let mut i = 0;
     for (name, original) in &streams {
         let mut data = original.clone();
-        delta_encode(&mut data);
+        // if i < 3 {
+        //    second_order_delta_encode(&mut data);
+        // } else {
+        //     delta_encode(&mut data);
+        // }
+        // delta_encode(&mut data);
+        second_order_delta_encode(&mut data);
         println!("Delta coding complete: {:?}", &data[0..10]);
         let (mut code, raw_bytes, quantized_bytes) = encode_stream(&data);
 
@@ -316,6 +439,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_rans_bytes += stream_size;
 
         encoded.push((name, code, raw_bytes, data.len()));
+        i += 1;
     }
 
     ///write encoded data
@@ -419,15 +543,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // println!("{}", name);
         let mut decoder = RansDec::new(data.coded.as_mut_slice(), data.raw);
         let mut decoded = decoder.decode_values(scene_len as usize);
-        delta_decode(&mut decoded);
+
+        second_order_delta_decode(&mut decoded);
 
         if idx < 3  {
+        //     second_order_delta_decode(&mut decoded);
             decoded_gaus[idx] = decoded.clone();
         }
+        // else {
+        //     delta_decode(&mut decoded);
+        // }
+
 
         let mut quantize = quantized[idx].clone();
         println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
-        delta_decode(&mut quantize);
+        // if idx < 3 {
+        //     second_order_delta_decode(&mut quantize);
+        // } else {
+        //     delta_decode(&mut quantize);
+        // }
+        second_order_delta_decode(&mut quantize);
         assert_eq!(decoded, *quantize);
         // println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
         // println!("Decoded stream {}: {:?}", idx, decoded.len());
@@ -444,9 +579,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n\n Total Drift");
     println!("Original Last 5: {:?}", &s_xyz_x[s_xyz_x.len()-5..]);
-    // println!("Original First 5: {:?}", &s_xyz_x[0..5]);
+    // println!("Original First 5: {:?}", &s_xyz_x[10000..10005]);
     println!("Decoded Last 5: {:?}", &decoded_gaus[0][decoded_gaus[0].len()-5..]);
-    // println!("Decoded First 5: {:?}", &decoded_gaus[0][0..5]);
+    // println!("Decoded First 5: {:?}", &decoded_gaus[0][10000..10005]);
 
 
     Ok(())

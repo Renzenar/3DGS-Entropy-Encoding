@@ -1,0 +1,9 @@
+Input PLY: ./scenes/bicycle/point_cloud.ply
+Loaded 3616103 Gaussians
+min delta: 0, max delta: 8388600
+mean delta: 3701620.83665952, std dev delta: 2413330.0433078636
+delta alph set size: 609477
+
+min size: 0, max size: 8388544
+mean size: 3692774.590046246, std dev size: 2417591.8781513567
+size alph set size: 462637
