@@ -1,9 +1,64 @@
 Input PLY: ./scenes/bicycle/point_cloud.ply
 Loaded 3616103 Gaussians
-min delta: 0, max delta: 8388600
-mean delta: 3701620.83665952, std dev delta: 2413330.0433078636
-delta alph set size: 609477
 
+X-PREDICTOR
+
+FIRST-ORDER DELTA PREDICTORJ
+function: x_hat_i = x_{i-1}
+min delta: 0, max delta: 8388592
+mean delta: 3718344.495986978, std dev delta: 2411117.5959811267
+delta alph set size: 650919
+
+SCALE RATIO INFORMED
+Function: x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]) * (s_i / s_{i-1});
+min size: 0, max size: 8388568
+mean size: 3723189.0436503054, std dev size: 2408639.1273820037
+size alph set size: 486949
+
+SECOND-ORDER DELTA INFORMED
+function: x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]);
+min size: 0, max size: 8388576
+mean size: 3729071.336218299, std dev size: 2406376.258740822
+size alph set size: 45811Y
+
+Y-PREDICTOR
+
+FIRST-ORDER DELTA PREDICTORJ
+function: x_hat_i = x_{i-1}
+min delta: 0, max delta: 8388568
+mean delta: 3708844.2810929334, std dev delta: 2409759.2409596825
+delta alph set size: 635648
+
+SCALE RATIO INFORMED
+Function: x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]) * (s_i / s_{i-1});
+min size: 0, max size: 8388600
+mean size: 3702531.8817898715, std dev size: 2407502.408876069
+size alph set size: 472655
+
+SECOND-ORDER DELTA INFORMED
+function: x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]);
+min size: 0, max size: 8388592
+mean size: 3695660.603290891, std dev size: 2402588.2830707375
+size alph set size: 444918
+
+Z-PREDICTOR
+
+FIRST-ORDER DELTA PREDICTORJ
+function: x_hat_i = x_{i-1}
+min delta: 0, max delta: 8388584
+mean delta: 3708803.6247805995, std dev delta: 2413192.59826135
+delta alph set size: 654297
+
+SCALE RATIO INFORMED
+Function: x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]) * (s_i / s_{i-1});
+min size: 0, max size: 8388544
+mean size: 3702597.0570511958, std dev size: 2414866.569946689
+size alph set size: 491395
+
+SECOND-ORDER DELTA INFORMED
+function: x_hat_i = x_{i-1} + (x_{i-1} - x_{i-2]);
 min size: 0, max size: 8388544
 mean size: 3692774.590046246, std dev size: 2417591.8781513567
 size alph set size: 462637
+
+
