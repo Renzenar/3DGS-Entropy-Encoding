@@ -17,6 +17,33 @@ const SCALE_BIT: u32 = 16;
 const MAX_ERR : i32 = 100;
 const STEP : f32 = (1 << 8) as f32;
 const MANT_ALPH_SIZE: usize = ((1 << 23) / STEP as usize) + 1;
+
+
+
+fn quantize(vals: &mut Vec<f32>) {
+
+    vals.iter_mut().for_each(| val| {
+        let mut mant = val.to_bits() & 0x7F_FFFF;
+        mant = ((mant as f32 / STEP).round() as u32 * STEP as u32) & 0x7F_FFFF;
+        *val = f32::from_bits((val.to_bits() & 0xFF80_0000) | mant);
+    });
+
+}
+fn second_order_delta_encode(v: &mut [f32]) {
+    if v.len() < 3 { return; }
+    for i in (2..v.len()).rev() {
+        v[i] = v[i] - (v[i-1] + (v[i-1] - v[i-2]));
+    }
+}
+
+fn second_order_delta_decode(v: &mut [f32]) {
+    if v.len() < 3 { return; }
+    for i in 2..v.len() {
+        v[i] = v[i] + (v[i-1] + (v[i-1] - v[i-2]));
+    }
+}
+
+
 struct Context {
     freq: Vec<u16>,
     total_freq: usize,

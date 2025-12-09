@@ -1,0 +1,39 @@
+X-COORDINATE:
+
+Naive Delta predictor:
+min delta: 0, max delta: 8388096
+mean delta: 3440309.4713883977, std dev delta: 2408980.224573968
+delta alph set size: 27089
+
+
+Second order Delta predictor:
+min size: 0, max size: 8388096
+mean size: 3577163.4182931185, std dev size: 2411729.6969138146
+size alph set size: 35223
+
+Y-COORDINATE:
+
+Naive Delta predictor:
+min delta: 0, max delta: 8387584
+mean delta: 3463470.717558377, std dev delta: 2422479.08440048
+delta alph set size: 25732
+
+
+Second order Delta predictor:
+min size: 0, max size: 8388096
+mean size: 3565633.4721945142, std dev size: 2404238.5773289017
+size alph set size: 33846
+
+
+Z-COORDINATE:
+
+Naive Delta predictor:
+min delta: 0, max delta: 8388352
+mean delta: 3415413.3745792084, std dev delta: 2444573.277042829
+delta alph set size: 28398
+
+
+Second order Delta predictor:
+min size: 0, max size: 8388112
+mean size: 3521921.1393240183, std dev size: 2423239.0169797135
+size alph set size: 37375
