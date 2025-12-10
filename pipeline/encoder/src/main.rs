@@ -4,7 +4,7 @@ use std::io::Write;
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
 use rans_coding::{RansEnc, RansDec};
-use decoder::{EncodedAttribute, read_gaussian_from_gsz, write_gaussians_to_ply};
+// use decoder::{EncodedAttribute, read_gaussian_from_gsz, write_gaussians_to_ply};
 // use rand::Rng;
 use deflate_coder::{compress_f32_vec, /*decompress_i32_vec*/};
 use gaussian_types::Gaussian;
@@ -481,79 +481,79 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
 
-    println!("\nReading from file\n");
-    let mut coded_data = Vec::<EncodedAttribute>::new();
-    let mut scene_len = 0;
-    read_gaussian_from_gsz(&file_path, &mut coded_data, &mut scene_len )?;
-
-    println!("Number of Gaussians in Read back: {}", scene_len);
-
-
-
-    // deflate baseline on flattened data
-    // let deflate_code = compress_i32_vec(flat_data.clone())?;
-    // let deflate_bytes = deflate_code.len();
-    // println!("DEFLATE (LZ77 + Huffman) code size: {} bytes\n", deflate_bytes);
-    let input_f = total_input_bytes as f32;
-    let rans_f = total_rans_bytes as f32;
-    // let deflate_f = deflate_bytes as f32;
-
-    // let input_f = ((s_xyz_x.len() + s_xyz_y.len() + s_xyz_z.len()) * size_of::<f32>()) as f32;
-    // let rans_f = (encoded[0].1.len() + encoded[0].2.len() +
-    //     encoded[1].1.len() + encoded[1].2.len() +
-    //     encoded[2].1.len() + encoded[2].2.len())
-    //     as f32;
-    // //
-    let rans_vs_raw = (input_f - rans_f) / input_f * 100.0;
-    // let rans_vs_deflate = (deflate_f - rans_f) / deflate_f * 100.0;
-
-    println!(
-        "Percent improvement rANS vs raw:      {:.2} %",
-        rans_vs_raw
-    );
-
-
-
+    // println!("\nReading from file\n");
+    // let mut coded_data = Vec::<EncodedAttribute>::new();
+    // let mut scene_len = 0;
+    // read_gaussian_from_gsz(&file_path, &mut coded_data, &mut scene_len )?;
+    //
+    // println!("Number of Gaussians in Read back: {}", scene_len);
+    //
+    //
+    //
+    // // deflate baseline on flattened data
+    // // let deflate_code = compress_i32_vec(flat_data.clone())?;
+    // // let deflate_bytes = deflate_code.len();
+    // // println!("DEFLATE (LZ77 + Huffman) code size: {} bytes\n", deflate_bytes);
+    // let input_f = total_input_bytes as f32;
+    // let rans_f = total_rans_bytes as f32;
+    // // let deflate_f = deflate_bytes as f32;
+    //
+    // // let input_f = ((s_xyz_x.len() + s_xyz_y.len() + s_xyz_z.len()) * size_of::<f32>()) as f32;
+    // // let rans_f = (encoded[0].1.len() + encoded[0].2.len() +
+    // //     encoded[1].1.len() + encoded[1].2.len() +
+    // //     encoded[2].1.len() + encoded[2].2.len())
+    // //     as f32;
+    // // //
+    // let rans_vs_raw = (input_f - rans_f) / input_f * 100.0;
+    // // let rans_vs_deflate = (deflate_f - rans_f) / deflate_f * 100.0;
+    //
     // println!(
-    //     "Percent improvement rANS vs DEFLATE: {:.2} %",
-    //     rans_vs_deflate
+    //     "Percent improvement rANS vs raw:      {:.2} %",
+    //     rans_vs_raw
     // );
-
-    let mut decoded_gaus: Vec<Vec<f32>> = Vec::new();
-
-    // decode each stream and verify
-    for (idx, mut data) in coded_data.into_iter().enumerate() {
-        // println!("{}", name);
-        let mut decoder = RansDec::new(data.coded.as_mut_slice(), data.raw);
-        let mut decoded = decoder.decode_values(scene_len as usize);
-
-
-
-        decoded_gaus.push(decoded.clone());
-
-
-        let mut quantize = quantized[idx].clone();
-        println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
-
-        assert_eq!(decoded, *quantize);
-        // println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
-        println!("Decoded stream {}: {:?}", idx, decoded.len());
-        println!("Quantized stream {}: {:?}", idx, &quantize[0..10]);
-        // if decoded != *quantize {
-        //     println!("STREAM MISMATCH: {}", idx);
-        // }
-    }
-
-
-    let path = "./output/truck_decoded.ply";
-    write_gaussians_to_ply(&path, &decoded_gaus, scene_len)?;
-
-
-    println!("\n\n Total Drift");
-    println!("Original Last 5: {:?}", &s_xyz_x[s_xyz_x.len()-5..]);
-    // println!("Original First 5: {:?}", &s_xyz_x[10000..10005]);
-    println!("Decoded Last 5: {:?}", &decoded_gaus[0][decoded_gaus[0].len()-5..]);
-    // println!("Decoded First 5: {:?}", &decoded_gaus[0][10000..10005]);
+    //
+    //
+    //
+    // // println!(
+    // //     "Percent improvement rANS vs DEFLATE: {:.2} %",
+    // //     rans_vs_deflate
+    // // );
+    //
+    // let mut decoded_gaus: Vec<Vec<f32>> = Vec::new();
+    //
+    // // decode each stream and verify
+    // for (idx, mut data) in coded_data.into_iter().enumerate() {
+    //     // println!("{}", name);
+    //     let mut decoder = RansDec::new(data.coded.as_mut_slice(), data.raw);
+    //     let mut decoded = decoder.decode_values(scene_len as usize);
+    //
+    //
+    //
+    //     decoded_gaus.push(decoded.clone());
+    //
+    //
+    //     let mut quantize = quantized[idx].clone();
+    //     println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
+    //
+    //     assert_eq!(decoded, *quantize);
+    //     // println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
+    //     println!("Decoded stream {}: {:?}", idx, decoded.len());
+    //     println!("Quantized stream {}: {:?}", idx, &quantize[0..10]);
+    //     // if decoded != *quantize {
+    //     //     println!("STREAM MISMATCH: {}", idx);
+    //     // }
+    // }
+    //
+    //
+    // let path = "./output/truck_decoded.ply";
+    // write_gaussians_to_ply(&path, &decoded_gaus, scene_len)?;
+    //
+    //
+    // println!("\n\n Total Drift");
+    // println!("Original Last 5: {:?}", &s_xyz_x[s_xyz_x.len()-5..]);
+    // // println!("Original First 5: {:?}", &s_xyz_x[10000..10005]);
+    // println!("Decoded Last 5: {:?}", &decoded_gaus[0][decoded_gaus[0].len()-5..]);
+    // // println!("Decoded First 5: {:?}", &decoded_gaus[0][10000..10005]);
 
 
     Ok(())

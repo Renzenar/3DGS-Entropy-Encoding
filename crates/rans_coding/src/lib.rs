@@ -12,10 +12,10 @@ use bv::BitVec;
 
 const SIGN_ALPH_SIZE : usize = 2;
 const EXP_ALPH_SIZE : usize = (1 << 8) * 2;
-const SCALE_BIT: u32 = 16;
-// const MAX_ERR : i32 = 15_000;
-const MAX_ERR : i32 = 3800;
-const STEP : f32 = (1 << 13) as f32;
+const SCALE_BIT: u32 = 14;
+// const MAX_ERR : i32 = 1975;
+const MAX_ERR : i32 = 1500;
+const STEP : f32 = (1 << 11) as f32;
 const MANT_ALPH_SIZE: usize = (((1 << 23) / STEP as usize) * 2) + 1;
 
 
@@ -251,7 +251,7 @@ impl<'a> RansEnc<'a> {
         let quantized = RansDec::rebuild_floats(&components);
 
         //2. Delta encode exponent and mantissa idx
-        self.delta_encode(&mut components);
+        RansEnc::delta_encode(&mut components);
 
 
         //3. emulate decoder forward pass and caching
@@ -305,7 +305,7 @@ impl<'a> RansEnc<'a> {
         res
     }
 
-    fn delta_encode(&self, components: &mut Vec<(bool, i16, i32, Option<u32>)>) {
+    fn delta_encode(components: &mut Vec<(bool, i16, i32, Option<u32>)>) {
         println!("Beginning Delta Encoding {}", components.len());
         if components.len() < 2 { return; }
         for i in (1..components.len()).rev() {
@@ -318,23 +318,12 @@ impl<'a> RansEnc<'a> {
         println!("Completed Delta Encoding {:?}", &components[0..10]);
     }
 
-    //Rewrite if use
-    // fn second_order_delta_encode(v: &mut [u32]) {
-    //     if v.len() < 3 { return; }
-    //     for i in (2..v.len()).rev() {
-    //         v[i] = v[i] - (v[i-1] + (v[i-1] - v[i-2]));
+    // fn second_order_delta_encode(comps: &mut Vec<(bool, i16, i32, Option<u32>)>) {
+    //     if comps.len() < 3 { return; }
+    //     for i in (2..comps.len()).rev() {
+    //         comps[i].1 = comps[i].1 - (comps[i-1].1 + (comps[i-1].1 - comps[i-2].1));
+    //         comps[i].2 = comps[i].2 - (comps[i-1].2 + (comps[i-1].2 - comps[i-2].2));
     //     }
-    // }
-
-
-    // fn quantize_idx(m : u32) -> u32 {
-    //
-    //     let mut idx = m / STEP as u32;
-    //     if m % STEP as u32 != 0 {
-    //         idx = MANT_ALPH_SIZE as u32;
-    //     }
-    //
-    //     idx
     // }
 }
 
@@ -519,7 +508,6 @@ impl<'a> RansDec<'a> {
         for i in 1..comp.len() {
             comp[i].1 = comp[i].1 + comp[i-1].1;
             if comp[i].3 == None { comp[i].2 = comp[i].2 + comp[i-1].2; }
-            // comp[i].2 = comp[i].2 + comp[i-1].2;
         }
         println!("Decoded Delta Components {:?}", &comp[0..10]);
     }
@@ -542,10 +530,11 @@ impl<'a> RansDec<'a> {
         res
     }
 
-    fn second_order_delta_decode(v: &mut [f32]) {
-        if v.len() < 3 { return; }
-        for i in 2..v.len() {
-            v[i] = v[i] + (v[i-1] + (v[i-1] - v[i-2]));
-        }
-    }
+    // fn second_order_delta_decode(comp: &mut Vec<(bool, i16, i32, Option<u32>)>) {
+    //     if comp.len() < 3 { return; }
+    //     for i in 2..comp.len() {
+    //         comp[i].1 = comp[i].1 + (comp[i-1].1 + (comp[i-1].1 - comp[i-2].1));
+    //         if comp[i].3 == None { comp[i].2 = comp[i].2 + (comp[i-1].2 + (comp[i-1].2 - comp[i-2].2)); }
+    //     }
+    // }
 }

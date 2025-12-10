@@ -126,8 +126,9 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
         let mut raw_buf = vec![0u8; raw_len as usize];
         reader.read_exact(&mut raw_buf)?;
 
-        coded_data.push(EncodedAttribute{coded: code_buf, raw: raw_buf});
+        coded_data.push(lib1::EncodedAttribute {coded: code_buf, raw: raw_buf});
     }
+
 
     Ok(())
 }

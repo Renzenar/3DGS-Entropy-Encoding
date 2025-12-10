@@ -3,11 +3,5 @@ name = "decoder"
 version = "0.1.0"
 edition = "2024"
 
-#DEBUG CODE
-[lib]
-name = "decoder"
-path = "src/lib.rs"
-#END DEBUG
-
 [dependencies]
 rans_coding = {path = "../../crates/rans_coding"}
