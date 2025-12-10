@@ -15,7 +15,7 @@ const EXP_ALPH_SIZE : usize = 1 << 8;
 const SCALE_BIT: u32 = 16;
 // const MAX_ERR : i32 = 15_000;
 const MAX_ERR : i32 = 100;
-const STEP : f32 = (1 << 8) as f32;
+const STEP : f32 = (1 << 13) as f32;
 const MANT_ALPH_SIZE: usize = ((1 << 23) / STEP as usize) + 1;
 
 
@@ -317,12 +317,17 @@ impl<'a> RansEnc<'a> {
 
     fn quantize_idx(m : u32) -> u32 {
 
-        let rat : f32 = m as f32 / STEP;
-        let mut idx = rat.round() as u32;
+        // let rat : f32 = m as f32 / STEP;
+        // let mut idx = rat.round() as u32;
+        //
+        // let err = (m - (idx * STEP as u32)) as i32;
+        // if err.abs() >= MAX_ERR {
+        //    idx = MANT_ALPH_SIZE as u32;
+        // }
 
-        let err = (m - (idx * STEP as u32)) as i32;
-        if err.abs() >= MAX_ERR {
-           idx = MANT_ALPH_SIZE as u32;
+        let mut idx = m / STEP as u32;
+        if m % STEP as u32 != 0 {
+            idx = MANT_ALPH_SIZE as u32;
         }
 
         idx
