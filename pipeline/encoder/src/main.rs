@@ -237,7 +237,42 @@ pub fn mean_std_u32(values: &Vec<u32>) -> (f64, f64) {
 //     Ok(())
 // }
 
-
+// fn main() -> Result<(), Box<dyn std::error::Error>>{
+//         let path: String = std::env::args().nth(1).expect("Missing .ply file path");
+//
+//         let mut scene = load_gaussians_from_ply(&path)?;
+//
+//         let num_gaussians = scene.gaussians.len();
+//         println!("Loaded {} Gaussians", num_gaussians);
+//
+//         // morton code generation
+//         scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
+//
+//         let original = scene.gaussians.iter().map(|g| g.xyz[0]).collect::<Vec<f32>>();
+//         let length = original.len();
+//         let mut data = vec![];
+//         // let length = 40;
+//
+//         for i in 0..length {
+//             data.push(original[i]);
+//         }
+//
+//
+//         // let data = &data[..length].to_vec();
+//
+//         let (mut code, raw, quantized) = encode_stream(&data);
+//
+//         let mut decoder = RansDec::new(&mut code, raw);
+//         let decoded = decoder.decode_values(length);
+//
+//         println!("Decoded stream {:?}",  &decoded[decoded.len() - 10..]);
+//         println!("Quantized stream {:?}", &quantized[quantized.len() - 10..]);
+//
+//         assert_eq!(decoded, quantized);
+//
+//     Ok(())
+//
+// }
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -502,11 +537,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         assert_eq!(decoded, *quantize);
         // println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
-        // println!("Decoded stream {}: {:?}", idx, decoded.len());
-        // println!("Quantized stream {}: {:?}", idx, &quantize[0..10]);
-        if decoded != *quantize {
-            println!("STREAM MISMATCH: {}", idx);
-        }
+        println!("Decoded stream {}: {:?}", idx, decoded.len());
+        println!("Quantized stream {}: {:?}", idx, &quantize[0..10]);
+        // if decoded != *quantize {
+        //     println!("STREAM MISMATCH: {}", idx);
+        // }
     }
 
 

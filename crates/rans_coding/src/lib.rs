@@ -11,12 +11,12 @@ use rans::b64_decoder::{B64RansDecSymbol, B64RansDecoderMulti};
 use bv::BitVec;
 
 const SIGN_ALPH_SIZE : usize = 2;
-const EXP_ALPH_SIZE : usize = 1 << 8;
+const EXP_ALPH_SIZE : usize = (1 << 8) * 2;
 const SCALE_BIT: u32 = 16;
 // const MAX_ERR : i32 = 15_000;
-const MAX_ERR : i32 = 8000;
+const MAX_ERR : i32 = 3800;
 const STEP : f32 = (1 << 13) as f32;
-const MANT_ALPH_SIZE: usize = ((1 << 23) / STEP as usize) + 1;
+const MANT_ALPH_SIZE: usize = (((1 << 23) / STEP as usize) * 2) + 1;
 
 
 struct Context {
@@ -76,6 +76,7 @@ struct RansEncContext {
     //consider turning this into a single flat index, for now this is proof of concept
     //would probably have to communicate how many partitions there are with each data stream
     rescale_location: Vec<usize>,
+    shift_range: i32,
 }
 
 /**
@@ -94,14 +95,18 @@ struct RansEncContext {
  *
  */
 impl RansEncContext {
-    pub fn new(alphabet_len: usize) -> Self {
+    pub fn new(alphabet_len: usize, shift_range: i32) -> Self {
         let context = Context::new(alphabet_len);
-        Self { context, snapshots: vec![], rescale_location: vec![] }
+        Self { context, snapshots: vec![], rescale_location: vec![] , shift_range}
+    }
+
+    pub fn shift_idx(&self, idx: i32) -> usize {
+        (idx + self.shift_range) as usize
     }
 
     //might want to add this into component breakdown
-    pub fn increment_freq(&mut self, val: u32, idx: usize, channel: usize){
-        self.context.increment_freq(val as usize);
+    pub fn increment_freq(&mut self, val: usize, idx: usize, channel: usize){
+        self.context.increment_freq(val);
         if self.context.rebuild_histogram() {
             self.build_snapshot();
             self.context.rescale_model();
@@ -145,9 +150,9 @@ impl<'a> RansEnc<'a> {
         let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         Self {
             encode,
-            sign_context: RansEncContext::new(SIGN_ALPH_SIZE),
-            exponent_context: RansEncContext::new(EXP_ALPH_SIZE),
-            mantissa_context: RansEncContext::new(MANT_ALPH_SIZE + 1),
+            sign_context: RansEncContext::new(SIGN_ALPH_SIZE, 0),
+            exponent_context: RansEncContext::new(EXP_ALPH_SIZE, (EXP_ALPH_SIZE / 2) as i32),
+            mantissa_context: RansEncContext::new(MANT_ALPH_SIZE + 1, (MANT_ALPH_SIZE / 2) as i32 ),
             encoder,
         }
     }
@@ -169,7 +174,6 @@ impl<'a> RansEnc<'a> {
         if let Some(idx) = self.mantissa_context.rescale_location.pop() {
             r_mant = idx;
         }
-
 
 
         let mut sign_symbols : Vec<B64RansEncSymbol> = self.sign_context.snapshots.pop().unwrap_or_else(|| panic!("Failed to get sign context snapshot"));
@@ -204,19 +208,20 @@ impl<'a> RansEnc<'a> {
 
 
             if let Some(comp) = components.pop() {
+                // println!("encoding comp {:?}", comp);
                 //encode sign
                 self.encoder.put_at(ENC_SIGN_CHANNEL,&sign_symbols[comp.0 as usize]);
 
                 //encode exponent
-                self.encoder.put_at(ENC_EXPONENT_CHANNEL,&exp_symbols[comp.1 as usize]);
+                self.encoder.put_at(ENC_EXPONENT_CHANNEL,&exp_symbols[self.exponent_context.shift_idx(comp.1 as i32)]);
 
                 //encode mant idx
-                self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[comp.2 as usize]);
-
                 if comp.3 != None {
+                    self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[MANT_ALPH_SIZE]);
                     raw_symbols.append(&mut comp.3.unwrap().to_ne_bytes().to_vec());
                     out_range += 1;
                 } else {
+                    self.encoder.put_at(ENC_MANTISSA_CHANNEL,&mant_symbols[self.mantissa_context.shift_idx(comp.2)]);
                     in_range += 1;
                 }
             }
@@ -232,7 +237,7 @@ impl<'a> RansEnc<'a> {
 
     }
 
-    fn forward_pass(&mut self) -> (Vec<(bool, u8, u32, Option<u32>)>, /*DEBUG CODE*/ Vec<f32>) {
+    fn forward_pass(&mut self) -> (Vec<(bool, i16, i32, Option<u32>)>, /*DEBUG CODE*/ Vec<f32>) {
         println!("Beginning Forward Pass on contents length {:?}", self.encode.len());
 
         self.sign_context.build_snapshot();
@@ -246,19 +251,17 @@ impl<'a> RansEnc<'a> {
         let quantized = RansDec::rebuild_floats(&components);
 
         //2. Delta encode exponent and mantissa idx
-        RansEnc::delta_encode(&mut components);
+        self.delta_encode(&mut components);
 
 
         //3. emulate decoder forward pass and caching
         for (i,comp)  in components.iter().enumerate() {
 
+            self.sign_context.increment_freq(comp.0 as usize, i, ENC_SIGN_CHANNEL);
+            self.exponent_context.increment_freq(self.exponent_context.shift_idx(comp.1 as i32), i, ENC_EXPONENT_CHANNEL);
 
-            self.sign_context.increment_freq(comp.0 as u32, i, ENC_SIGN_CHANNEL);
-            self.exponent_context.increment_freq(comp.1 as u32, i, ENC_EXPONENT_CHANNEL);
-
-
-            if comp.2 < MANT_ALPH_SIZE as u32 {
-                self.mantissa_context.increment_freq(comp.2, i, ENC_MANTISSA_CHANNEL);
+            if comp.3 == None {
+                self.mantissa_context.increment_freq(self.mantissa_context.shift_idx(comp.2), i, ENC_MANTISSA_CHANNEL);
             }
         };
 
@@ -268,29 +271,29 @@ impl<'a> RansEnc<'a> {
 
     }
 
-    fn componentize_and_quantize(vals: &Vec<f32>) -> Vec<(bool, u8, u32, Option<u32>)> {
-        let mut res : Vec<(bool, u8, u32, Option<u32>)> = Vec::with_capacity(vals.len());
+    fn componentize_and_quantize(vals: &Vec<f32>) -> Vec<(bool, i16, i32, Option<u32>)> {
+        let mut res : Vec<(bool, i16, i32, Option<u32>)> = Vec::with_capacity(vals.len());
         let mut i = 0;
+        println!("Beginning Componentization and Quantize {}", vals.len());
         for val in vals {
-            let mut components : (bool, u8, u32, Option<u32>);
+            let mut components : (bool, i16, i32, Option<u32>);
 
             let bits = val.to_bits();
 
-            //extract sing, exponent, mantissa
-            let sign :bool = ((bits >> 31) & 1) != 0;
-            let exp = ((bits >> 23) & 0xFF) as u8;
+            //extract sign, exponent, mantissa
+            let sign : bool = ((bits >> 31) & 1) != 0;
+            let exp = ((bits >> 23) & 0xFF) as i16;
             let mant = bits & 0x7F_FFFF;
 
             //compute nearest quantization step
-            //NOTE: I will delat code my quantization idx k NOT the mantissa.
-            let mut qm_idx = (mant as f32 / STEP).round() as u32;
+            //NOTE: I will delta code my quantization idx NOT the mantissa.
+            let qm_idx = (mant as f32 / STEP).round() as i32;
 
             components = (sign, exp, qm_idx, None);
 
             //check if the quantized mantissa is in range
-            if (mant as i32 - (qm_idx as i32 * STEP as i32)).abs() >= MAX_ERR {
-                qm_idx = MANT_ALPH_SIZE as u32;
-                components.2 = qm_idx;
+            if (mant as i32 - (qm_idx* STEP as i32)).abs() >= MAX_ERR {
+                // components.2 = MANT_ALPH_SIZE as i32 + 1;
                 components.3 = Some(mant);
                 i += 1;
             }
@@ -302,15 +305,17 @@ impl<'a> RansEnc<'a> {
         res
     }
 
-    fn delta_encode(components: &mut Vec<(bool, u8, u32, Option<u32>)>) {
+    fn delta_encode(&self, components: &mut Vec<(bool, i16, i32, Option<u32>)>) {
+        println!("Beginning Delta Encoding {}", components.len());
         if components.len() < 2 { return; }
         for i in (1..components.len()).rev() {
             //delta code exponent
             components[i].1 = components[i].1 - components[i-1].1;
             //delta code mantissa idx
             components[i].2 = components[i].2 - components[i-1].2;
+
         }
-        println!("Completed Delta Encoding");
+        println!("Completed Delta Encoding {:?}", &components[0..10]);
     }
 
     //Rewrite if use
@@ -338,6 +343,7 @@ struct RansDecContext {
     symbols: Vec<B64RansDecSymbol>,
     freq_to_symbol: Vec<usize>,
     alphabet_len: usize,
+    shift_range: i32,
 }
 
 
@@ -350,9 +356,13 @@ struct RansDecContext {
  *  - returns an array of all encoded symbols
  */
 impl RansDecContext {
-    pub fn new(alphabet_len: usize) -> Self {
+    pub fn new(alphabet_len: usize, shift_range: i32) -> Self {
         let context = Context::new(alphabet_len);
-        Self { context, symbols: vec![], freq_to_symbol: vec![], alphabet_len }
+        Self { context, symbols: vec![], freq_to_symbol: vec![], alphabet_len, shift_range }
+    }
+
+    pub fn shift_idx(&self, symbol: usize) -> i32 {
+        symbol as i32 - self.shift_range
     }
 
     pub fn increment_freq(&mut self, symbol: usize) {
@@ -408,15 +418,15 @@ pub struct RansDec<'a> {
 impl<'a> RansDec<'a> {
     pub fn new(code_data: &'a mut [u8], raw_bytes: Vec<u8>) -> Self {
         Self {
-            sign_context: RansDecContext::new(SIGN_ALPH_SIZE),
-            exponent_context: RansDecContext::new(EXP_ALPH_SIZE),
-            mantissa_context: RansDecContext::new(MANT_ALPH_SIZE + 1),
+            sign_context: RansDecContext::new(SIGN_ALPH_SIZE, 0),
+            exponent_context: RansDecContext::new(EXP_ALPH_SIZE, (EXP_ALPH_SIZE / 2) as i32),
+            mantissa_context: RansDecContext::new(MANT_ALPH_SIZE + 1, (MANT_ALPH_SIZE / 2) as i32),
             decoder: B64RansDecoderMulti::new(code_data),
             raw_bytes,
         }
     }
     pub fn decode_values(&mut self, length: usize) -> Vec<f32> {
-        let mut components : Vec<(bool, u8, u32, Option<u32>)> = Vec::with_capacity(length);
+        let mut components : Vec<(bool, i16, i32, Option<u32>)> = Vec::with_capacity(length);
         self.sign_context.build_inverse_freq_table();
         self.exponent_context.build_inverse_freq_table();
         self.mantissa_context.build_inverse_freq_table();
@@ -424,7 +434,7 @@ impl<'a> RansDec<'a> {
         println!("\nBeginning Decoding");
         let (mut num_esc, mut num_code) = (0, 0);
         for i in 0..length {
-            let mut component : (bool, u8, u32, Option<u32>);
+            let mut component : (bool, i16, i32, Option<u32>);
 
             let sign_cum_freq = self.decoder.get_at(DEC_SIGN_CHANNEl, SCALE_BIT);
             let exp_cum_freq = self.decoder.get_at(DEC_EXPONENT_CHANNEL, SCALE_BIT);
@@ -442,15 +452,20 @@ impl<'a> RansDec<'a> {
             self.sign_context.increment_freq(sign_symbol);
             self.exponent_context.increment_freq(exp_symbol);
 
-            component = ((sign_symbol & 1) != 1, exp_symbol as u8, mant_symbol as u32, None );
+            component = ((sign_symbol & 1) != 0, self.exponent_context.shift_idx(exp_symbol) as i16, self.mantissa_context.shift_idx(mant_symbol), None );
 
             if mant_symbol < MANT_ALPH_SIZE {
                 self.mantissa_context.increment_freq(mant_symbol);
             } else {
+                // println!("Decoded out of range symbol: {:?}", mant_symbol);
                 let val = u32::from_ne_bytes(self.raw_bytes[self.raw_bytes.len() - 4..].try_into().unwrap());
                 self.raw_bytes.drain(self.raw_bytes.len() - 4..);
-                component.3 = Some(val)
+                component.2 = (val as f32 / STEP).round() as i32;
+                component.3 = Some(val);
+                // println!("Decoded component: {:?}", component);
             }
+
+            components.push(component);
 
 
             // let mut mantissa: u32  = match mant_symbol < MANT_ALPH_SIZE  {
@@ -492,7 +507,6 @@ impl<'a> RansDec<'a> {
 
         }
 
-
         RansDec::delta_decode(&mut components);
 
         // println!("Decoded esc {} and coded {} ", num_esc, num_code);
@@ -500,24 +514,31 @@ impl<'a> RansDec<'a> {
 
     }
 
-    fn delta_decode(comp: &mut Vec<(bool, u8, u32, Option<u32>)>) {
+    fn delta_decode(comp: &mut Vec<(bool, i16, i32, Option<u32>)>) {
         if comp.len() < 2 { return; }
         for i in 1..comp.len() {
             comp[i].1 = comp[i].1 + comp[i-1].1;
-            comp[i].2 = comp[i].2 + comp[i-1].2;
+            if comp[i].3 == None { comp[i].2 = comp[i].2 + comp[i-1].2; }
+            // comp[i].2 = comp[i].2 + comp[i-1].2;
         }
+        println!("Decoded Delta Components {:?}", &comp[0..10]);
     }
 
-    fn rebuild_floats(components: &Vec<(bool, u8, u32, Option<u32>)>) -> Vec<f32> {
+    fn rebuild_floats(components: &Vec<(bool, i16, i32, Option<u32>)>) -> Vec<f32> {
         let mut res : Vec<f32> = Vec::with_capacity(components.len());
         for comp in components {
-            let mant= match comp.2 == MANT_ALPH_SIZE as u32 { true => comp.3.unwrap(), false => comp.2 * STEP as u32};
+            let mant : i32 = match comp.3 != None {
+                true => {
+                    comp.3.unwrap() as i32
+                },
+                false => comp.2 * STEP as i32};
             let bits =
                     ((comp.0 as u32 & 0x1) << 31) |
                     ((comp.1 as u32 & 0xFF) << 23) |
-                    (mant & 0x7F_FFFF);
+                    (mant as u32 & 0x7F_FFFF);
             res.push(f32::from_bits(bits));
         }
+        println!("Decoded floats {:?}", res.len());
         res
     }
 
