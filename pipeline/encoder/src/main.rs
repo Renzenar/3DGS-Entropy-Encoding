@@ -20,51 +20,7 @@ fn encode_stream(data: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<f32>) {
     encoder.encode_values()
 }
 
-fn delta_encode(v: &mut [f32]) {
-    if v.len() < 2 { return; }
-    for i in (1..v.len()).rev() {
-        v[i] = v[i] - v[i-1];
-    }
-}
 
-fn delta_decode(v: &mut [f32]) {
-    if v.len() < 2 { return; }
-    for i in 1..v.len() {
-        v[i] = v[i] + v[i-1];
-    }
-}
-
-const STEP : f32 = (1 << 13) as f32;
-// const MAX_ERR : i32 = 128;
-const MAX_ERR : i32 = 80000;
-fn quantize(vals: &mut Vec<f32>) {
-
-    let mut i = 0;
-    vals.iter_mut().for_each(| val| {
-        let mant = val.to_bits() & 0x7F_FFFF;
-        let q_m = ((mant as f32 / STEP).round() as u32 * STEP as u32) & 0x7F_FFFF;
-        if (mant as i32 - q_m as i32).abs() < MAX_ERR {
-            *val  = f32::from_bits((val.to_bits() & 0xFF80_0000) | q_m);
-        } else {
-            i += 1;
-        }
-    });
-
-    println!("Errors {} out of {}", i, vals.len());
-}
-fn second_order_delta_encode(v: &mut [f32]) {
-    if v.len() < 3 { return; }
-    for i in (2..v.len()).rev() {
-        v[i] = v[i] - (v[i-1] + (v[i-1] - v[i-2]));
-    }
-}
-
-fn second_order_delta_decode(v: &mut [f32]) {
-    if v.len() < 3 { return; }
-    for i in 2..v.len() {
-        v[i] = v[i] + (v[i-1] + (v[i-1] - v[i-2]));
-    }
-}
 
 
 /// Convert a unit (or nearly-unit) quaternion (w, x, y, z) to a 3x3 rotation matrix.
@@ -444,9 +400,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, original) in &streams {
         let mut data = original.clone();
 
-        quantize(&mut data);
-        // delta_encode(&mut data);
-        println!("Delta coding complete: {:?}", &data[0..10]);
         let (mut code, raw_bytes, quantized_bytes) = encode_stream(&data);
 
         quantized.push(quantized_bytes);
@@ -539,12 +492,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut decoder = RansDec::new(data.coded.as_mut_slice(), data.raw);
         let mut decoded = decoder.decode_values(scene_len as usize);
 
-        // delta_decode(&mut decoded);
 
-        // if idx < 3  {
-            // println!("decode used");
-            // decoded_gaus[idx] = decoded.clone();
-        // }
 
         decoded_gaus.push(decoded.clone());
 
@@ -552,7 +500,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut quantize = quantized[idx].clone();
         println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
 
-        // delta_decode(&mut quantize);
         assert_eq!(decoded, *quantize);
         // println!("Decoded stream {}: {:?}", idx, &decoded[0..10]);
         // println!("Decoded stream {}: {:?}", idx, decoded.len());
