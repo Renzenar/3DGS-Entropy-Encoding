@@ -14,9 +14,6 @@ pub fn write_gaussians_to_ply(path: &str, gaussian: &Vec<Vec<f32>>, num_gaus: u3
     let mut file = std::fs::File::create(path)?;
     let mut w = std::io::BufWriter::new(file);
 
-
-    // println!("Writing {} gaussians to ply file | gaussians in array {} ", num_gaus, g.len());
-
     // --------- write PLY header (binary_little_endian) ----------
     writeln!(w, "ply")?;
     writeln!(w, "format binary_little_endian 1.0")?;
@@ -126,7 +123,7 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
         let mut raw_buf = vec![0u8; raw_len as usize];
         reader.read_exact(&mut raw_buf)?;
 
-        coded_data.push(lib1::EncodedAttribute {coded: code_buf, raw: raw_buf});
+        coded_data.push(EncodedAttribute {coded: code_buf, raw: raw_buf});
     }
 
 
@@ -147,11 +144,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 
 
     let mut res : Vec<Vec<f32>> = Vec::new();
+    println!("Beginning Decoding");
     for mut encoded_attribute in coded_data{
         let mut decoder = RansDec::new(encoded_attribute.coded.as_mut_slice(), encoded_attribute.raw);
         let attr = decoder.decode_values(scene_len as usize);
         res.push(attr);
     }
+    println!("Decoding Done");
 
     write_gaussians_to_ply(&ply_path, &res, scene_len)?;
 
