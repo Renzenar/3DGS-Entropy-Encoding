@@ -7,6 +7,7 @@ const SH_REST_LEN: usize = 45;
 pub struct EncodedAttribute{
     pub coded: Vec<u8>,
     pub raw: Vec<u8>,
+    pub raw_len: u32,
 }
 
 
@@ -101,6 +102,7 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
     reader.read_exact(&mut len_buf)?;
     *scene_len = u32::from_le_bytes(len_buf);
 
+    let mut i = 0;
     loop {
         //read code length
 
@@ -119,11 +121,20 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
         reader.read_exact(&mut len_buf)?;
         let raw_len = u32::from_le_bytes(len_buf);
 
+        // println!("raw len {}, code len {} for stream {}", raw_len, code_len, i);
+
         //read raw data
         let mut raw_buf = vec![0u8; raw_len as usize];
         reader.read_exact(&mut raw_buf)?;
 
-        coded_data.push(EncodedAttribute {coded: code_buf, raw: raw_buf});
+        //read raw len
+        reader.read_exact(&mut len_buf)?;
+        let raw_len = u32::from_le_bytes(len_buf);
+        // println!("Num raw symbols {}", raw_len);
+
+        coded_data.push(EncodedAttribute {coded: code_buf, raw: raw_buf, raw_len});
+
+        i+= 1;
     }
 
 
@@ -145,8 +156,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     let mut res : Vec<Vec<f32>> = Vec::new();
     println!("Beginning Decoding");
-    for mut encoded_attribute in coded_data{
-        let mut decoder = RansDec::new(encoded_attribute.coded.as_mut_slice(), encoded_attribute.raw);
+    for (i, encoded_attribute) in coded_data.iter_mut().enumerate() {
+        //attribute-specific fine tuned qauntization parameters NOTE! MUST MATCH WITH ENCODER!
+        let (step, mant_scale) = if i < 3 {
+            //position attribte (step size, scale bit)
+            (1 << 11, 14u32)
+        } else if  i > 51  {
+            //opacity, rotation, scale attributes (step size, scale bit)
+            (1 << 10, 16u32)
+        } else {
+            //spherical harmonics attributes (step size, scale bit)
+            (1 << 19, 13u32)
+        };
+        let mut decoder = RansDec::new(&mut encoded_attribute.coded, &mut encoded_attribute.raw, encoded_attribute.raw_len, step as f32, mant_scale);
         let attr = decoder.decode_values(scene_len as usize);
         res.push(attr);
     }

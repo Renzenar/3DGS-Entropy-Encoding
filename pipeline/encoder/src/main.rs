@@ -10,11 +10,11 @@ use deflate_coder::{compress_f32_vec, /*decompress_i32_vec*/};
 use gaussian_types::Gaussian;
 
 
-fn encode_stream(data: &Vec<f32>) -> (Vec<u8>, Vec<u8>, Vec<f32>) {
+fn encode_stream(data: &Vec<f32>, step: f32, err : i32, mant_scale: u32) -> (Vec<u8>, (Vec<u8>, u32) ) {
     // rough capacity based on input size
     let bytes_per_i32 = std::mem::size_of::<i32>();
     let est_bytes = data.len() * bytes_per_i32;
-    let mut encoder = RansEnc::new(est_bytes * 2, data);
+    let mut encoder = RansEnc::new(est_bytes * 2, data, step, err, mant_scale);
 
     // rANS encode single integer stream
     encoder.encode_values()
@@ -261,10 +261,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Total raw bytes (i32): {}", total_input_bytes);
 
     // encode each stream with rANS and collect sizes
-    let mut encoded: Vec<(&str, Vec<u8>, Vec<u8>, usize)> = Vec::new();
+    let mut encoded: Vec<(&str, Vec<u8>, Vec<u8>, u32)> = Vec::new();
     let mut total_rans_bytes: usize = 0;
 
-    let mut quantized : Vec<Vec<f32>> = Vec::new();
+    // let mut quantized : Vec<Vec<f32>> = Vec::new();
 
 
     let mut i = 0;
@@ -272,14 +272,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, original) in &streams {
         let mut data = original.clone();
 
-        let (mut code, raw_bytes, quantized_bytes) = encode_stream(&data);
+        //per attribute fine-tuned quantization step size and err NOTE! MUST MATCH WITH DECODER!
+        let (step, err, mant_scale) = if i < 3 {
+            //position (semi-resilient to quant)
+            (1 << 11, 800, 14u32)
+        } else if  i > 51  {
+            //opacity, scale, rotation (non-resilient to quant)
+            (1 << 10, 512, 16u32)
+        } else {
+            //spherical harmonics (very resilient to quant)
+            (1 << 19, 1 << 19, 13u32)
+        };
 
-        quantized.push(quantized_bytes);
+        let (mut code, (raw_bytes, num_raw)) = encode_stream(&data, step as f32, err, mant_scale);
 
-        let stream_size = code.len() + raw_bytes.len();
+        // quantized.push(quantized_bytes);
+
+        let stream_size = code.len() + raw_bytes.len() ;
         total_rans_bytes += stream_size;
 
-        encoded.push((name, code, raw_bytes, data.len()));
+        encoded.push((name, code, raw_bytes, num_raw));
         i += 1;
     }
     println!("Finished Encoding");
@@ -291,7 +303,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scene_len = num_gaussians as u32;
     writer.write_all(&scene_len.to_le_bytes())?;
 
-    for (name, code, raw_bytes, len) in encoded.iter() {
+    for (name, code, raw_bytes, num_raw) in encoded.iter() {
         //write code_len
         let code_len = code.len() as u32;
         assert!(code_len <= u32::MAX, "code length too large");
@@ -307,6 +319,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         //write raw bytes
         writer.write_all(&raw_bytes)?;
+
+        //TODO mirror in decoder
+        let raw_len = *num_raw;
+        assert!(raw_len <= u32::MAX, "raw bytes length too large");
+        writer.write_all(&raw_len.to_le_bytes())?;
     }
 
     writer.flush()?;
