@@ -3,10 +3,5 @@ name = "rans_coding"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-lib = "src/lib.rs"
-
 [dependencies]
-bv = "0.11.1"
-fenwick = "2.0.1"
 rans = "0.4.0"

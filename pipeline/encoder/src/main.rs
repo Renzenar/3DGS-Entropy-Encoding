@@ -1,13 +1,8 @@
-use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
-use rans_coding::{RansEnc, RansDec};
-// use decoder::{EncodedAttribute, read_gaussian_from_gsz, write_gaussians_to_ply};
-// use rand::Rng;
-use deflate_coder::{compress_f32_vec, /*decompress_i32_vec*/};
-use gaussian_types::Gaussian;
+use rans_coding::RansEnc;
 
 
 fn encode_stream(data: &Vec<f32>, step: f32, err : i32, mant_scale: u32) -> (Vec<u8>, (Vec<u8>, u32) ) {
@@ -216,34 +211,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut streams: Vec<(String, Vec<f32>)> = Vec::new();
 
     // add position streams
-    streams.push(("xyz_x".to_string(), s_xyz_x.clone()));
-    streams.push(("xyz_y".to_string(), s_xyz_y.clone()));
-    streams.push(("xyz_z".to_string(), s_xyz_z.clone()));
+    streams.push(("xyz_x".to_string(), s_xyz_x));
+    streams.push(("xyz_y".to_string(), s_xyz_y));
+    streams.push(("xyz_z".to_string(), s_xyz_z));
 
     // add spherical harmonics streams
-    streams.push(("sh_dc_r".to_string(), s_sh_dc_r.clone()));
-    streams.push(("sh_dc_g".to_string(), s_sh_dc_g.clone()));
-    streams.push(("sh_dc_b".to_string(), s_sh_dc_b.clone()));
+    streams.push(("sh_dc_r".to_string(), s_sh_dc_r));
+    streams.push(("sh_dc_g".to_string(), s_sh_dc_g));
+    streams.push(("sh_dc_b".to_string(), s_sh_dc_b));
 
 
     //spherical harmonics rest streams
     for (j, s) in s_sh_rest.clone().into_iter().enumerate() {
-        streams.push((format!("sh_rest_{j}"), s.clone()));
+        streams.push((format!("sh_rest_{j}"), s));
     }
 
     // add opacity stream
-    streams.push(("opacity".to_string(), s_opacity.clone()));
+    streams.push(("opacity".to_string(), s_opacity));
 
     // add scale streams
-    streams.push(("scale_x".to_string(), s_scale_x.clone()));
-    streams.push(("scale_y".to_string(), s_scale_y.clone()));
-    streams.push(("scale_z".to_string(), s_scale_z.clone()));
+    streams.push(("scale_x".to_string(), s_scale_x));
+    streams.push(("scale_y".to_string(), s_scale_y));
+    streams.push(("scale_z".to_string(), s_scale_z));
 
     // add rotation streams
-    streams.push(("rot_x".to_string(), s_rot_x.clone()));
-    streams.push(("rot_y".to_string(), s_rot_y.clone()));
-    streams.push(("rot_z".to_string(), s_rot_z.clone()));
-    streams.push(("rot_w".to_string(), s_rot_w.clone()));
+    streams.push(("rot_x".to_string(), s_rot_x));
+    streams.push(("rot_y".to_string(), s_rot_y));
+    streams.push(("rot_z".to_string(), s_rot_z));
+    streams.push(("rot_w".to_string(), s_rot_w));
 
     println!("Number of integer streams: {}", streams.len());
 
@@ -253,7 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         flat_data.extend_from_slice(s);
     }
 
-    let bytes_per_i32 = std::mem::size_of::<i32>();
+    let bytes_per_i32 = size_of::<i32>();
 
     let total_input_bytes = flat_data.len() * bytes_per_i32;
 
@@ -264,15 +259,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encoded: Vec<(&str, Vec<u8>, Vec<u8>, u32)> = Vec::new();
     let mut total_rans_bytes: usize = 0;
 
-    // let mut quantized : Vec<Vec<f32>> = Vec::new();
-
 
     let mut i = 0;
     println!("Beginning Encoding");
     for (name, original) in &streams {
-        let mut data = original.clone();
 
-        //per attribute fine-tuned quantization step size and err NOTE! MUST MATCH WITH DECODER!
+        //per attribute-fine-tuned quantization step size and err NOTE! MUST MATCH WITH DECODER!
         let (step, err, mant_scale) = if i < 3 {
             //position (semi-resilient to quant)
             (1 << 11, 800, 14u32)
@@ -284,7 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (1 << 19, 1 << 19, 13u32)
         };
 
-        let (mut code, (raw_bytes, num_raw)) = encode_stream(&data, step as f32, err, mant_scale);
+        let (code, (raw_bytes, num_raw)) = encode_stream(&original, step as f32, err, mant_scale);
 
         // quantized.push(quantized_bytes);
 
@@ -296,14 +288,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("Finished Encoding");
 
-    ///write encoded data to file
+    //write encoded data to file
     let file = File::create(file_path.clone())?;
     let mut writer = std::io::BufWriter::new(file);
 
     let scene_len = num_gaussians as u32;
     writer.write_all(&scene_len.to_le_bytes())?;
 
-    for (name, code, raw_bytes, num_raw) in encoded.iter() {
+    for (_name, code, raw_bytes, num_raw) in encoded.iter() {
         //write code_len
         let code_len = code.len() as u32;
         assert!(code_len <= u32::MAX, "code length too large");

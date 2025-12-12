@@ -8,7 +8,6 @@
 use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoderMulti, B64RansEncoder};
 use rans::{RansEncSymbol, RansEncoderMulti, RansDecSymbol, RansDecoderMulti, RansEncoder, RansDecoder};
 use rans::b64_decoder::{B64RansDecSymbol, B64RansDecoderMulti, B64RansDecoder};
-use bv::BitVec;
 
 const SIGN_ALPH_SIZE : usize = 2;
 const EXP_ALPH_SIZE : usize = (1 << 8) * 2;
@@ -233,7 +232,7 @@ impl<'a> RansEnc<'a> {
         let mut raw_symbols: Vec<u8> = vec![];
 
         //complete forward pass concurrently for the 3 parts.
-        let (mut components ) = self.forward_pass();
+        let mut components  = self.forward_pass();
 
 
         let (mut r_sign, mut r_exp, mut r_mant) = (0, 0, 0);
@@ -350,7 +349,7 @@ impl<'a> RansEnc<'a> {
     * the same histogram transitions will occur in the decoder.
     */
 
-    fn forward_pass(&mut self) -> (Vec<(bool, i16, i32, Option<u32>)>) {
+    fn forward_pass(&mut self) -> Vec<(bool, i16, i32, Option<u32>)> {
         self.sign_context.build_snapshot();
         self.exponent_context.build_snapshot();
         self.mantissa_context.build_snapshot();
@@ -377,7 +376,7 @@ impl<'a> RansEnc<'a> {
         };
 
 
-        (components)
+        components
 
     }
 
@@ -396,7 +395,6 @@ impl<'a> RansEnc<'a> {
 
     fn componentize_and_quantize(&self, vals: &Vec<f32>) -> Vec<(bool, i16, i32, Option<u32>)> {
         let mut res : Vec<(bool, i16, i32, Option<u32>)> = Vec::with_capacity(vals.len());
-        let mut i = 0;
         for val in vals {
             let mut components : (bool, i16, i32, Option<u32>);
 
@@ -415,9 +413,7 @@ impl<'a> RansEnc<'a> {
 
             //check if the quantized mantissa is in range
             if (mant as i32 - (qm_idx* self.step as i32)).abs() >= self.max_err {
-                // components.2 = MANT_ALPH_SIZE as i32 + 1;
                 components.3 = Some(mant);
-                i += 1;
             }
             res.push(components);
         };
@@ -538,7 +534,7 @@ impl RansDecContext {
 
 }
 
-const DEC_SIGN_CHANNEl: usize = 2;
+const DEC_SIGN_CHANNEL: usize = 2;
 const DEC_EXPONENT_CHANNEL: usize = 1;
 const DEC_MANTISSA_CHANNEL: usize = 0;
 pub struct RansDec<'a> {
@@ -567,7 +563,7 @@ pub struct RansDec<'a> {
 impl<'a> RansDec<'a> {
     pub fn new(code_data: &'a mut [u8], raw: &'a mut Vec<u8>, raw_len: u32, step: f32, mant_scale: u32) -> Self {
         let mant_alph_size = (((1 << 23) / step as usize) * 2) + 1;
-        let mut raw_bytes = RansDec::decode_raw(raw, raw_len);
+        let raw_bytes = RansDec::decode_raw(raw, raw_len);
         Self {
             sign_context: RansDecContext::new(SIGN_ALPH_SIZE, 0, 8),
             exponent_context: RansDecContext::new(EXP_ALPH_SIZE, (EXP_ALPH_SIZE / 2) as i32, 12),
@@ -600,16 +596,16 @@ impl<'a> RansDec<'a> {
         self.exponent_context.build_inverse_freq_table();
         self.mantissa_context.build_inverse_freq_table();
 
-        for i in 0..length {
+        for _ in 0..length {
             let mut component : (bool, i16, i32, Option<u32>);
 
-            let sign_cum_freq = self.decoder.get_at(DEC_SIGN_CHANNEl, 8);
+            let sign_cum_freq = self.decoder.get_at(DEC_SIGN_CHANNEL, 8);
             let exp_cum_freq = self.decoder.get_at(DEC_EXPONENT_CHANNEL, 12);
             let mant_cum_freq = self.decoder.get_at(DEC_MANTISSA_CHANNEL, self.mant_scale);
 
             let sign_symbol = self.sign_context.freq_to_symbol[sign_cum_freq as usize];
-            let mut exp_symbol = self.exponent_context.freq_to_symbol[exp_cum_freq as usize];
-            let mut mant_symbol = self.mantissa_context.freq_to_symbol[mant_cum_freq as usize];
+            let exp_symbol = self.exponent_context.freq_to_symbol[exp_cum_freq as usize];
+            let mant_symbol = self.mantissa_context.freq_to_symbol[mant_cum_freq as usize];
 
 
             self.sign_context.increment_freq(sign_symbol);
@@ -629,7 +625,7 @@ impl<'a> RansDec<'a> {
             components.push(component);
 
 
-            self.decoder.advance_step_at(DEC_SIGN_CHANNEl,&self.sign_context.symbols[sign_symbol], 8);
+            self.decoder.advance_step_at(DEC_SIGN_CHANNEL, &self.sign_context.symbols[sign_symbol], 8);
             self.decoder.advance_step_at(DEC_EXPONENT_CHANNEL,&self.exponent_context.symbols[exp_symbol], 12);
             self.decoder.advance_step_at(DEC_MANTISSA_CHANNEL,&self.mantissa_context.symbols[mant_symbol], self.mant_scale);
             self.decoder.renorm_all();
@@ -658,7 +654,7 @@ impl<'a> RansDec<'a> {
 
         decode_context.build_inverse_freq_table();
 
-        for i in 0..raw_len as usize {
+        for _ in 0..raw_len as usize {
             let cum_freq = decoder.get(scale_bits);
             let symbol = decode_context.freq_to_symbol[cum_freq as usize];
             decode_context.increment_freq(symbol);

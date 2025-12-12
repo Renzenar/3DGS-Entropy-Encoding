@@ -12,7 +12,7 @@ pub struct EncodedAttribute{
 
 
 pub fn write_gaussians_to_ply(path: &str, gaussian: &Vec<Vec<f32>>, num_gaus: u32) -> io::Result<()> {
-    let mut file = std::fs::File::create(path)?;
+    let file = std::fs::File::create(path)?;
     let mut w = std::io::BufWriter::new(file);
 
     // --------- write PLY header (binary_little_endian) ----------
@@ -102,7 +102,6 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
     reader.read_exact(&mut len_buf)?;
     *scene_len = u32::from_le_bytes(len_buf);
 
-    let mut i = 0;
     loop {
         //read code length
 
@@ -121,8 +120,6 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
         reader.read_exact(&mut len_buf)?;
         let raw_len = u32::from_le_bytes(len_buf);
 
-        // println!("raw len {}, code len {} for stream {}", raw_len, code_len, i);
-
         //read raw data
         let mut raw_buf = vec![0u8; raw_len as usize];
         reader.read_exact(&mut raw_buf)?;
@@ -130,11 +127,9 @@ pub fn read_gaussian_from_gsz(path: &str, coded_data: &mut Vec<EncodedAttribute>
         //read raw len
         reader.read_exact(&mut len_buf)?;
         let raw_len = u32::from_le_bytes(len_buf);
-        // println!("Num raw symbols {}", raw_len);
 
         coded_data.push(EncodedAttribute {coded: code_buf, raw: raw_buf, raw_len});
 
-        i+= 1;
     }
 
 
