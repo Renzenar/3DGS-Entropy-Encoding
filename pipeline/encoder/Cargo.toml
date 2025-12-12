@@ -9,3 +9,4 @@ gaussian_sorter = {path = "../../crates/gaussian_sorter"}
 rans_coding = {path = "../../crates/rans_coding"}
 gaussian_types = {path = "../../crates/gaussian_types"}
 deflate_coder = {path = "../../crates/deflate_coder"}
+indicatif = "0.18.3"

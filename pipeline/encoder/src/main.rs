@@ -3,6 +3,7 @@ use std::io::Write;
 use gaussian_parser::load_gaussians_from_ply;
 use gaussian_sorter::generate_morton_code;
 use rans_coding::RansEnc;
+use indicatif::{ProgressBar, ProgressStyle};
 
 
 fn encode_stream(data: &Vec<f32>, step: f32, err : i32, mant_scale: u32) -> (Vec<u8>, (Vec<u8>, u32) ) {
@@ -40,91 +41,6 @@ pub fn mean_std_u32(values: &Vec<u32>) -> (f64, f64) {
     (mean, std_dev)
 }
 
-
-
-// fn main() -> Result<(), Box<dyn std::error::Error>> {
-//     let path: String = std::env::args().nth(1).expect("Missing .ply file path");
-//     println!("Input PLY: {}", path);
-//
-//     // load gaussian scene
-//     let mut scene = load_gaussians_from_ply(&path)?;
-//
-//     let num_gaussians = scene.gaussians.len();
-//     println!("Loaded {} Gaussians", num_gaussians);
-//
-//     // morton code generation
-//     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
-//
-//     let mut data_x : Vec<f32> = scene.gaussians.iter().map(|x| x.xyz[0]).collect();
-//     let mut data_y : Vec<f32> = scene.gaussians.iter().map(|x| x.xyz[1]).collect();
-//     let mut data_z : Vec<f32> = scene.gaussians.iter().map(|x| x.xyz[2]).collect();
-//
-//     quantize(&mut data_x);
-//     quantize(&mut data_y);
-//     quantize(&mut data_z);
-//
-//     let mut delta_data_x  = data_x.clone();
-//     let mut delta_data_y  = data_y.clone();
-//     let mut delta_data_z  = data_z.clone();
-//
-//     delta_encode(&mut delta_data_x);
-//     delta_encode(&mut delta_data_y);
-//     delta_encode(&mut delta_data_z);
-//
-//     let mant_data_x = delta_data_x.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
-//     let mant_data_y = delta_data_y.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
-//     let mant_data_z = delta_data_z.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
-//
-//     let mut min_delta = mant_data_y[0];
-//     let mut max_delta = min_delta;
-//     let mut delta_alph_set : HashSet<u32> = HashSet::new();
-//     delta_alph_set.insert(min_delta);
-//
-//     for i in 1..delta_data_y.len() {
-//         let mant = mant_data_y[i];
-//         if mant < min_delta { min_delta = mant; }
-//         if mant > max_delta { max_delta = mant; }
-//         delta_alph_set.insert(mant);
-//     }
-//     let (mean_delta, std_dev_delta) = mean_std_u32(&mant_data_y);
-//     println!("\nNaive Delta predictor: ");
-//     println!("min delta: {}, max delta: {}", min_delta, max_delta);
-//     println!("mean delta: {}, std dev delta: {}", mean_delta, std_dev_delta);
-//     println!("delta alph set size: {}", delta_alph_set.len());
-//     println!();
-//
-//     second_order_delta_encode(&mut data_x);
-//     second_order_delta_encode(&mut data_y);
-//     second_order_delta_encode(&mut data_z);
-//
-//     let mant_gs_x = data_x.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
-//     let mant_gs_y =  data_y.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
-//     let mant_gs_z = data_z.iter().map(|x| x.to_bits() & 0x7F_FFFF).collect::<Vec<u32>>();
-//
-//     let mut min_size = mant_gs_y[0];
-//     let mut max_size = min_delta;
-//     let mut size_alph : HashSet<u32> = HashSet::new();
-//     size_alph.insert(min_size);
-//     for i in 1..scene.gaussians.len() {
-//         let mant = mant_gs_y[i];
-//         if mant < min_size { min_size = mant; }
-//         if mant > max_size { max_size = mant; }
-//         size_alph.insert(mant);
-//     }
-//
-//     let (mean, std_dev) = mean_std_u32(&mant_gs_y);
-//
-//     println!("\nSecond order Delta predictor: ");
-//     println!("min size: {}, max size: {}", min_size, max_size);
-//     println!("mean size: {}, std dev size: {}", mean, std_dev);
-//     println!("size alph set size: {}", size_alph.len());
-//
-//
-//     Ok(())
-// }
-
-
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load ply path from args
     let path: String = std::env::args().nth(1).expect("Missing .ply file path");
@@ -140,12 +56,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // morton code generation
     scene.gaussians.sort_unstable_by_key(|g| generate_morton_code(g, &scene.mins, &scene.maxes));
 
-    println!("min xyz = {:?}", scene.mins);
-    println!("max xyz = {:?}", scene.maxes);
-
     // determine sh_rest length and sanity check
     let sh_rest_len = scene.gaussians[0].sh_rest.len();
-    println!("sh_rest length per gaussian: {}", sh_rest_len);
 
     // position streams
     let mut s_xyz_x: Vec<f32> = Vec::with_capacity(num_gaussians);
@@ -259,10 +171,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encoded: Vec<(&str, Vec<u8>, Vec<u8>, u32)> = Vec::new();
     let mut total_rans_bytes: usize = 0;
 
+    let pb = ProgressBar::new(streams.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
+        )?
+            .progress_chars("=>-"),
+    );
 
     let mut i = 0;
-    println!("Beginning Encoding");
+    println!("Encoding streams:");
     for (name, original) in &streams {
+        pb.set_message(format!("encoding attribute: {}", name));
 
         //per attribute-fine-tuned quantization step size and err NOTE! MUST MATCH WITH DECODER!
         let (step, err, mant_scale) = if i < 3 {
@@ -278,24 +198,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (code, (raw_bytes, num_raw)) = encode_stream(&original, step as f32, err, mant_scale);
 
-        // quantized.push(quantized_bytes);
 
         let stream_size = code.len() + raw_bytes.len() ;
         total_rans_bytes += stream_size;
 
         encoded.push((name, code, raw_bytes, num_raw));
         i += 1;
-    }
-    println!("Finished Encoding");
 
+        pb.inc(1);
+    }
+    pb.finish_with_message("Encoding complete");
+
+
+    let pb = ProgressBar::new(streams.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
+        )?
+            .progress_chars("=>-"),
+    );
     //write encoded data to file
+    println!("Writing .gsz file:");
     let file = File::create(file_path.clone())?;
     let mut writer = std::io::BufWriter::new(file);
 
     let scene_len = num_gaussians as u32;
     writer.write_all(&scene_len.to_le_bytes())?;
 
-    for (_name, code, raw_bytes, num_raw) in encoded.iter() {
+    for (name, code, raw_bytes, num_raw) in encoded.iter() {
+        pb.set_message(format!("writing attribute: {}", name));
+
         //write code_len
         let code_len = code.len() as u32;
         assert!(code_len <= u32::MAX, "code length too large");
@@ -316,11 +248,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let raw_len = *num_raw;
         assert!(raw_len <= u32::MAX, "raw bytes length too large");
         writer.write_all(&raw_len.to_le_bytes())?;
+
+        pb.inc(1);
     }
+    pb.finish_with_message("Writing complete");
 
     writer.flush()?;
-
-
 
     println!(
         "\nTotal rANS coded size (all streams): {} bytes",
