@@ -4,56 +4,61 @@ kerbl counter : {
   SSIM :    0.9074346
   PSNR :   28.9296703
   LPIPS:    0.2008313
+  Size :     289.2 MB 
 },
 ours counter : {
   SSIM :    0.8998206
   PSNR :   28.3326836
   LPIPS:    0.2130275
-  Size :      449.4MB
+  Size :      87.2 MB 
 },
 kerbl garden : {
   SSIM :    0.8655214
   PSNR :   27.3141327
   LPIPS:    0.1083420
+  Size :      1300 MB
 },
 ours garden : {
   SSIM :    0.8583775
   PSNR :   27.0209332
   LPIPS:    0.1193472
-  Size :     433.0 MB
+  Size :     413.0 MB
 },
 kerbl kitchen : {
   SSIM :    0.9253690
   PSNR :   30.8364010
   LPIPS:    0.1275177
+  Size :     438.1 MB
 },
 ours kitchen : {
   SSIM :    0.9253690
   PSNR :   30.8364010
   LPIPS:    0.1275177
-  Size :     138.6 MB
+  Size :     132.2 MB
 },
 kerbl room : {
   SSIM :    0.9179030
   PSNR :   31.3803329
   LPIPS:    0.2203987
+  Size :     376.9 MB
 },
 ours room : {
   SSIM :    0.9107794
   PSNR :   30.6174183
   LPIPS:    0.2327297
-  Size :     115.9 MB
+  Size :     110.6 MB
 },
 kerbl stump : {
   SSIM :    0.7713969
   PSNR :   26.5834503
   LPIPS:    0.2158261
+  Size :      1100 MB
 },
 ours stump : {
   SSIM :    0.7641835
   PSNR :   26.4187832
   LPIPS:    0.2256421
-  Size :     367.5 MB
+  Size :     350.5 MB
 },
 <--END MIP-NeRf 30_000-->
 
@@ -62,24 +67,25 @@ kerbl train : {
   SSIM :    0.8076466
   PSNR :   21.7869816
   LPIPS:    0.2143041
+  Size :     242.8 MB
 },
 ours train : {
   SSIM :    0.8020768
   PSNR :   21.6762943
   LPIPS:    0.2226115
-  Size :      78.0 MB
+  Size :      74.3 MB
 },
 kerbl truck : {
- SSIM :    0.8756189
- PSNR :   24.9926758
- LPIPS:    0.1512909
-
+  SSIM :    0.8756189
+  PSNR :   24.9926758
+  LPIPS:    0.1512909
+  Size :     601.0 MB
 },
 ours truck : {
  SSIM :    0.8684242
  PSNR :   24.6443577
  LPIPS:    0.1612675
- Size :     186.2 MB
+ Size :     177.6 MB
 },
 <--END Tanks and Temples 30_000-->
 
@@ -88,23 +94,25 @@ kerbl drjohnson : {
   SSIM :    0.8988737
   PSNR :   28.9749355
   LPIPS:    0.2444929
+  Size :     805.4 MB
 },
 ours drjohnson : {
   SSIM :    0.8947019
   PSNR :   28.7089634
   LPIPS:    0.2512798
-  Size :     254.2 MB
+  Size :     242.4 MB
 },
 kerbl playroom : {
   SSIM :    0.9070460
   PSNR :   30.0673943
   LPIPS:    0.2398662
+  Size :     602.2 MB
 },
 ours playroom : {
   SSIM :    0.9027894
   PSNR :   29.7941265
   LPIPS:    0.2463940
-  Size :     186.6 MB
+  Size :     178.0 MB
 },
 <--END Deep Blending 30_000-->
 
@@ -116,78 +124,85 @@ kerbl bike : {
   SSIM :    0.6624412
   PSNR :   23.5630035
   LPIPS:    0.3365542
+  Size :     855.3 MB
 },
 ours bike {
   SSIM :    0.6574494
   PSNR :   23.4236374
   LPIPS:    0.3392789
-  Size :     259.2 MB
+  Size :     242.2 MB
 },
 kerbl bonsai : {
   SSIM :    0.9192488
   PSNR :   29.6833363
   LPIPS:    0.2377204
+  Size :     273.2 MB
 },
 ours bonsai : {
   SSIM :    0.9137387
   PSNR :   29.2113590
   LPIPS:    0.2447961
-  Size :      84.2 MB
+  Size :      80.3 MB
 },
 kerbl counter : {
   SSIM :    0.8760426
   PSNR :   26.9038448
   LPIPS:    0.2472437
+  Size :     243.5 MB
 },
 ours counter : {
   SSIM :    0.8715566
   PSNR :   26.7020454
   LPIPS:    0.2548117
-  Size :      76.6 MB
+  Size :      73.0 MB
 },
 kerbl garden : {
   SSIM :    0.8269311
   PSNR :   26.1819706
   LPIPS:    0.1663893
+  Size :      1000 MB
 },
 ours garden : {
   SSIM :    0.8216565
   PSNR :   26.0025330
   LPIPS:    0.1739349
-  Size:      320.2 MB
+  Size:      305.3 MB
 },
 kerbl kitchen : {
   SSIM :    0.9018551
   PSNR :   28.8273182
   LPIPS:    0.1609896
+  Size :     398.4 MB
 },
 ours kitchen : {
   SSIM :    0.8978770
   PSNR :   28.6014824
   LPIPS:    0.1665761
-  Size :     124.5 MB
+  Size :     118.7 MB
 },
 kerbl room : {
   SSIM :    0.8918473
   PSNR :   29.2615871
   LPIPS:    0.2644356
+  Size :     267.3 MB
 },
 ours room : {
   SSIM :    0.8866140
   PSNR :   28.7975941
   LPIPS:    0.2728761
-  Size :      83.0 MB
+  Size :      79.2 MB
 },
 kerbl stump : {
   SSIM :    0.7237438
   PSNR :   25.7201042
   LPIPS:    0.2931800
+  Size :     900.5 MB
 },
 ours stump : {
   SSIM :    0.7186617
   PSNR :   25.5940094
   LPIPS:    0.2983793
-  Size :     274.6 MB
+  Size :     261.9 MB
 },
 <--END MIP-NeRf 7_000-->
 
@@ -196,23 +211,25 @@ kerbl train : {
   SSIM :    0.7552726
   PSNR :   20.0771275
   LPIPS:    0.3047761
+  Size :     132.2 MB
 },
 ours train : {
   SSIM :    0.6869531
   PSNR :   18.9113827
   LPIPS:    0.3550398
-  Size :      43.3 MB
+  Size :      41.3 MB
 },
 kerbl truck : {
   SSIM :    0.8375046
   PSNR :   23.3814850
   LPIPS:    0.2128207
+  Size :     409.7 MB
 },
 ours truck : {
   SSIM :    0.8320047
   PSNR :   23.2613354
   LPIPS:    0.2199957
-  Size :     125.5 MB
+  Size :     119.7 MB
 },
 <--END Tanks and Temples 7_000-->
 
@@ -221,23 +238,25 @@ kerbl drjohnson : {
   SSIM :    0.8566417
   PSNR :   26.7082214
   LPIPS:    0.3377397
+  Size :     449.9 MB
 },
 ours drjohnson : {
   SSIM :    0.8545220
   PSNR :   26.5969715
   LPIPS:    0.3409935
-  Size :     143.2 MB
+  Size :     136.6 MB
 },
 kerbl playroom : {
   SSIM :    0.8974494
   PSNR :   29.4647827
   LPIPS:    0.2847896
+  Size :     410.3 MB
 },
 ours playroom : {
   SSIM :    0.8941315
   PSNR :   29.1714420
   LPIPS:    0.2891454
-  Size :     126.4 MB
+  Size :     120.5 MB
 },
 <--END Deep Blending 7_000-->
 
