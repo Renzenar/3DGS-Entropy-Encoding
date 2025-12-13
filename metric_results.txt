@@ -1,0 +1,224 @@
+<--START 30_000-->
+<--START MIP-Nerf360 30_000-->
+kerbl counter : {
+  SSIM :    0.9074346
+  PSNR :   28.9296703
+  LPIPS:    0.2008313
+},
+ours counter : {
+  SSIM :    0.8998206
+  PSNR :   28.3326836
+  LPIPS:    0.2130275
+},
+kerbl garden : {
+  SSIM :    0.8655214
+  PSNR :   27.3141327
+  LPIPS:    0.1083420
+},
+ours garden : {
+  SSIM :    0.8583775
+  PSNR :   27.0209332
+  LPIPS:    0.1193472
+},
+kerbl kitchen : {
+  SSIM :    0.9253690
+  PSNR :   30.8364010
+  LPIPS:    0.1275177
+},
+ours kitchen : {
+  SSIM :    0.9253690
+  PSNR :   30.8364010
+  LPIPS:    0.1275177
+},
+kerbl room : {
+  SSIM :    0.9179030
+  PSNR :   31.3803329
+  LPIPS:    0.2203987
+},
+ours room : {
+  SSIM :    0.9107794
+  PSNR :   30.6174183
+  LPIPS:    0.2327297
+},
+kerbl stump : {
+  SSIM :    0.7713969
+  PSNR :   26.5834503
+  LPIPS:    0.2158261
+},
+ours stump : {
+  SSIM :    0.7641835
+  PSNR :   26.4187832
+  LPIPS:    0.2256421
+},
+<--END MIP-NeRf 30_000-->
+
+<--START Tanks and Temples 30_000-->
+kerbl train : {
+  SSIM :    0.8076466
+  PSNR :   21.7869816
+  LPIPS:    0.2143041
+},
+ours train : {
+  SSIM :    0.8020768
+  PSNR :   21.6762943
+  LPIPS:    0.2226115
+},
+kerbl truck : {
+ SSIM :    0.8756189
+ PSNR :   24.9926758
+ LPIPS:    0.1512909
+},
+ours truck : {
+ SSIM :    0.8684242
+ PSNR :   24.6443577
+ LPIPS:    0.1612675
+},
+<--END Tanks and Temples 30_000-->
+
+<--START Deep Blending 30_000-->
+kerbl drjohnson : {
+  SSIM :    0.8988737
+  PSNR :   28.9749355
+  LPIPS:    0.2444929
+},
+ours drjohnson : {
+  SSIM :    0.8947019
+  PSNR :   28.7089634
+  LPIPS:    0.2512798
+},
+kerbl playroom : {
+  SSIM :    0.9070460
+  PSNR :   30.0673943
+  LPIPS:    0.2398662
+},
+ours playroom : {
+  SSIM :    0.9027894
+  PSNR :   29.7941265
+  LPIPS:    0.2463940
+},
+<--END Deep Blending 30_000-->
+
+<--END 30_000-->
+
+<--START 7_000-->
+<--START MIP-Nerf360 7000-->
+kerbl bike : {
+  SSIM :    0.6624412
+  PSNR :   23.5630035
+  LPIPS:    0.3365542
+},
+ours bike {
+  SSIM :    0.6574494
+  PSNR :   23.4236374
+  LPIPS:    0.3392789
+},
+kerbl bonsai : {
+  SSIM :    0.9192488
+  PSNR :   29.6833363
+  LPIPS:    0.2377204
+},
+ours bonsai : {
+  SSIM :    0.9137387
+  PSNR :   29.2113590
+  LPIPS:    0.2447961
+},
+kerbl counter : {
+  SSIM :    0.8760426
+  PSNR :   26.9038448
+  LPIPS:    0.2472437
+},
+ours counter : {
+  SSIM :    0.8715566
+  PSNR :   26.7020454
+  LPIPS:    0.2548117
+},
+kerbl garden : {
+  SSIM :    0.8269311
+  PSNR :   26.1819706
+  LPIPS:    0.1663893
+},
+ours garden : {
+  SSIM :    0.8216565
+  PSNR :   26.0025330
+  LPIPS:    0.1739349
+},
+kerbl kitchen : {
+  SSIM :    0.9018551
+  PSNR :   28.8273182
+  LPIPS:    0.1609896
+},
+ours kitchen : {
+  SSIM :    0.8978770
+  PSNR :   28.6014824
+  LPIPS:    0.1665761
+},
+kerbl room : {
+  SSIM :    0.8918473
+  PSNR :   29.2615871
+  LPIPS:    0.2644356
+},
+ours room : {
+  SSIM :    0.8866140
+  PSNR :   28.7975941
+  LPIPS:    0.2728761
+},
+kerbl stump : {
+  SSIM :    0.7237438
+  PSNR :   25.7201042
+  LPIPS:    0.2931800
+},
+ours stump : {
+  SSIM :    0.7186617
+  PSNR :   25.5940094
+  LPIPS:    0.2983793
+},
+<--END MIP-NeRf 7_000-->
+
+<--START Tanks and Temples 7000-->
+kerbl train : {
+  SSIM :    0.7552726
+  PSNR :   20.0771275
+  LPIPS:    0.3047761
+},
+ours train : {
+  SSIM :    0.6869531
+  PSNR :   18.9113827
+  LPIPS:    0.3550398
+},
+kerbl truck : {
+  SSIM :    0.8375046
+  PSNR :   23.3814850
+  LPIPS:    0.2128207
+},
+ours truck : {
+  SSIM :    0.8320047
+  PSNR :   23.2613354
+  LPIPS:    0.2199957
+},
+<--END Tanks and Temples 7_000-->
+
+<--START Deep Blending 7000-->
+kerbl drjohnson : {
+  SSIM :    0.8566417
+  PSNR :   26.7082214
+  LPIPS:    0.3377397
+},
+ours drjohnson : {
+  SSIM :    0.8545220
+  PSNR :   26.5969715
+  LPIPS:    0.3409935
+},
+kerbl playroom : {
+  SSIM :    0.8974494
+  PSNR :   29.4647827
+  LPIPS:    0.2847896
+},
+ours playroom : {
+  SSIM :    0.8941315
+  PSNR :   29.1714420
+  LPIPS:    0.2891454
+},
+<--END Deep Blending 7_000-->
+
+<--END 7_000-->
+

@@ -1,4 +1,3 @@
-use std::io;
 use std::io::{ErrorKind, Read, Write};
 use rans_coding::{RansDec};
 use indicatif::{ProgressBar, ProgressStyle};
