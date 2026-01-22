@@ -1,5 +1,7 @@
 # 3DGS Entropy Encoding
 
+[Read Full Paper Here](https://drive.google.com/file/d/1YP8JtXgY8ffhL6wJqK257i4xJBKYFMCn/view?usp=sharing)
+
 This project implements a custom entropy encoding and decoding pipeline optimized for 3D Gaussian Splatting (3DGS) data. It utilizes a block-adaptive rANS (Range Asymmetric Numeral Systems) coder to compress Gaussian attribute streams efficiently.
 
 ## Prerequisites
