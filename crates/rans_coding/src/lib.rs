@@ -9,6 +9,9 @@ use rans::b64_encoder::{B64RansEncSymbol, B64RansEncoderMulti, B64RansEncoder};
 use rans::{RansEncSymbol, RansEncoderMulti, RansDecSymbol, RansDecoderMulti, RansEncoder, RansDecoder};
 use rans::b64_decoder::{B64RansDecSymbol, B64RansDecoderMulti, B64RansDecoder};
 
+//im messing with stuff
+use std::collections::HashMap;
+
 const SIGN_ALPH_SIZE : usize = 2;
 const EXP_ALPH_SIZE : usize = (1 << 8) * 2;
 
@@ -199,6 +202,89 @@ pub struct RansEnc<'a> {
  */
 
 impl<'a> RansEnc<'a> {
+
+    //yup messing with stuff
+    pub fn debug_stats(&self) {
+        let mut comps = self.componentize_and_quantize(self.encode);
+        let n = comps.len();
+        if n == 0 { return; }
+
+        // pre-delta copies (optional but helpful)
+        // let exp0: Vec<i16> = comps.iter().map(|c| c.1).collect();
+        // let idx0: Vec<i32> = comps.iter().map(|c| c.2).collect();
+
+        // apply same delta as encoder
+        let mut comps_delta = comps.clone();
+        RansEnc::delta_encode(&mut comps_delta);
+
+        let escapes = comps_delta.iter().filter(|c| c.3.is_some()).count();
+        let escape_rate = escapes as f64 / n as f64;
+
+        // Δexp stats
+        let mut exp_zero = 0usize;
+        let mut exp_abs_sum = 0f64;
+        let mut exp_abs_sq_sum = 0f64;
+
+        // Δidx stats (non-escape only)
+        let mut idx_count = 0usize;
+        let mut idx_zero = 0usize;
+        let mut idx_abs_sum = 0f64;
+        let mut idx_abs_sq_sum = 0f64;
+
+        // top frequencies for Δidx (non-escape)
+        let mut freq: HashMap<i32, u32> = HashMap::new();
+
+        for c in &comps_delta {
+            // Δexp always exists
+            let de = c.1 as i32;
+            if de == 0 { exp_zero += 1; }
+            let ade = (de.abs()) as f64;
+            exp_abs_sum += ade;
+            exp_abs_sq_sum += ade * ade;
+
+            // Δidx only counted when not escape
+            if c.3.is_none() {
+                idx_count += 1;
+                let di = c.2;
+                if di == 0 { idx_zero += 1; }
+                let adi = (di.abs()) as f64;
+                idx_abs_sum += adi;
+                idx_abs_sq_sum += adi * adi;
+                *freq.entry(di).or_insert(0) += 1;
+            }
+        }
+
+        let exp_zero_pct = (exp_zero as f64 / n as f64) * 100.0;
+        let exp_mean_abs = exp_abs_sum / n as f64;
+        let exp_std_abs = ((exp_abs_sq_sum / n as f64) - exp_mean_abs * exp_mean_abs).max(0.0).sqrt();
+
+        let (idx_zero_pct, idx_mean_abs, idx_std_abs) = if idx_count == 0 {
+            (0.0, 0.0, 0.0)
+        } else {
+            let z = (idx_zero as f64 / idx_count as f64) * 100.0;
+            let m = idx_abs_sum / idx_count as f64;
+            let s = ((idx_abs_sq_sum / idx_count as f64) - m * m).max(0.0).sqrt();
+            (z, m, s)
+        };
+
+        // top 5 most common Δidx values
+        let mut items: Vec<(i32, u32)> = freq.into_iter().collect();
+        items.sort_by_key(|&(_k, v)| std::cmp::Reverse(v));
+        let top5: Vec<(i32, u32)> = items.into_iter().take(5).collect();
+
+        println!(
+            "stats: N={} escape={:.3}% | Δexp: zero={:.1}% mean|.|={:.3} std|.|={:.3} | Δidx(non-esc): zero={:.1}% mean|.|={:.1} std|.|={:.1} top5={:?}",
+            n,
+            escape_rate * 100.0,
+            exp_zero_pct,
+            exp_mean_abs,
+            exp_std_abs,
+            idx_zero_pct,
+            idx_mean_abs,
+            idx_std_abs,
+            top5
+        );
+    }
     pub fn new(buffer_size: usize, encode: &'a Vec<f32>, step: f32, err: i32, mant_scale: u32) -> Self {
         let encoder = B64RansEncoderMulti::new(buffer_size); // recommend 1MiB starting internal buffer for 512KB blocks (double block size)
         let mant_alph_size = (((1 << 23) / step as usize) * 2) + 1;

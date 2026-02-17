@@ -12,6 +12,7 @@ fn encode_stream(data: &Vec<f32>, step: f32, err : i32, mant_scale: u32) -> (Vec
     let est_bytes = data.len() * bytes_per_i32;
     let mut encoder = RansEnc::new(est_bytes * 2, data, step, err, mant_scale);
 
+    encoder.debug_stats();
     // rANS encode single integer stream
     encoder.encode_values()
 }
@@ -187,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //per attribute-fine-tuned quantization step size and err NOTE! MUST MATCH WITH DECODER!
         let (step, err, mant_scale) = if i < 3 {
             //position (semi-resilient to quant)
-            (1 << 11, 800, 14u32)
+            (1 << 11, i32::MAX / 4, 14u32)
         } else if  i > 51  {
             //opacity, scale, rotation (non-resilient to quant)
             (1 << 10, 512, 16u32)
