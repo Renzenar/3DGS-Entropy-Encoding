@@ -1,9 +1,0 @@
-[package]
-name = "vpcc_mixed_hi_policy_eval"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-gaussian_parser = { path = "../../crates/gaussian_parser" }
-gaussian_packing = { path = "../../crates/gaussian_packing" }
-gaussian_types = { path = "../../crates/gaussian_types" }

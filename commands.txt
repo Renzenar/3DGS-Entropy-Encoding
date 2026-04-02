@@ -1,0 +1,1 @@
+cargo run --release -p vpcc_encoder -- scenes/models/bicycle/point_cloud/iteration_30000/point_cloud.ply --output-dir runs/test --overwrite --write-decoded-ply

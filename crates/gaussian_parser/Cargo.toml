@@ -9,5 +9,6 @@ repository = "git@github.com:Sizboo/3DGS-Entropy-Encoding.git"
 path = "src/lib.rs"
 
 [dependencies]
-gaussian_types = { workspace = true }
+gaussian_types = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }

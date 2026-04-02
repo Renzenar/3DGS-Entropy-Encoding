@@ -6,4 +6,4 @@ test_out/
 out_dir/
 res_images/
 .venv/
-
+runs/*
