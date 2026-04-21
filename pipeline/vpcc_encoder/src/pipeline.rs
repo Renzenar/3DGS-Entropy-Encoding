@@ -44,6 +44,12 @@ pub fn run(config: CliConfig) -> Result<(), Box<dyn std::error::Error>> {
     let mut storage_config = PackedRasterStorageConfig::vpcc_video_atlas(config.quality);
     storage_config.sh_dc = sh_dc_storage_from_env(storage_config.sh_dc)?;
     let sh_rest_codec_config = storage_config.sh_rest_codec;
+    storage_config.lcevc = Some(LcevcConfig {
+        enabled: true,
+        downscale_factor: 2,
+        apply_to_geometry: false,
+        apply_to_sh: true,
+    });
     let mut logger = RunLogger::new(
         Path::new(&config.output_dir),
         config.log_file.as_deref(),

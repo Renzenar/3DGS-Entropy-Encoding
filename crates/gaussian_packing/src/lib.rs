@@ -12,7 +12,11 @@ use deflate_coder::{compress_u8_vec_with_level, decompress_u8_vec};
 use gaussian_parser::Scene;
 use gaussian_sorter::generate_morton_code;
 use gaussian_types::Gaussian;
+use lcevc::{decode_lcevc_residual, encode_lcevc_residual};
 use serde::{Deserialize, Serialize};
+use video::frame::Frame;
+use video::residual::*;
+use video::resize::*;
 
 pub use experimental_streams::{
     AuxiliaryCodecMetadata, NORMALS_PAYLOAD_FILE, NormalsCodecConfig, NormalsCodecMetadata,
@@ -90,6 +94,25 @@ impl GroupStorageMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LcevcConfig {
+    pub enabled: bool,
+    pub downscale_factor: u32, // e.g. 2 or 4
+    pub apply_to_geometry: bool,
+    pub apply_to_sh: bool,
+}
+
+impl Default for LcevcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            downscale_factor: 2,
+            apply_to_geometry: false,
+            apply_to_sh: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PackedRasterStorageConfig {
     pub geometry: GroupStorageMode,
@@ -102,6 +125,7 @@ pub struct PackedRasterStorageConfig {
     pub geometry_codec: ShRestVideoAtlasCodecConfig,
     pub sh_dc_codec: ShRestVideoAtlasCodecConfig,
     pub sh_rest_codec: ShRestVideoAtlasCodecConfig,
+    pub lcevc: Option<LcevcConfig>,
 }
 
 impl PackedRasterStorageConfig {
@@ -149,7 +173,20 @@ impl PackedRasterStorageConfig {
             geometry_codec,
             sh_dc_codec,
             sh_rest_codec,
+            lcevc: None,
         }
+    }
+
+    pub fn lcevc_enabled_for_sh(&self) -> bool {
+        self.lcevc
+            .as_ref()
+            .is_some_and(|c| c.enabled && c.apply_to_sh)
+    }
+
+    pub fn lcevc_enabled_for_geom(&self) -> bool {
+        self.lcevc
+            .as_ref()
+            .is_some_and(|c| c.enabled && c.apply_to_geometry)
     }
 }
 
@@ -252,6 +289,14 @@ struct PackedRasterMetadata {
     sh_rest_quant: Vec<QuantParams>,
     geom_quant: [QuantParams; 3],
     sh_dc_quant: [QuantParams; 3],
+    #[serde(default)]
+    pub lcevc_enabled: bool,
+    #[serde(default)]
+    pub lcevc_downscale: Option<u32>,
+    #[serde(default)]
+    pub lcevc_on_geometry: bool,
+    #[serde(default)]
+    pub lcevc_on_sh: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -594,6 +639,7 @@ pub fn write_packed_raster_scene_dir(
             sh_rest_codec: ShRestVideoAtlasCodecConfig::from_quality_preset(
                 QualityPreset::Lossless,
             ),
+            lcevc: None,
         },
     )
 }
@@ -641,6 +687,13 @@ pub fn write_packed_raster_scene_dir_with_report(
         sh_rest_quant: packed.sh_rest_quant.clone(),
         geom_quant: packed.geom_quant,
         sh_dc_quant: packed.sh_dc_quant,
+        lcevc_enabled: storage_config.lcevc.is_some_and(|cfg| cfg.enabled),
+        lcevc_downscale: storage_config
+            .lcevc
+            .as_ref()
+            .map(|cfg| cfg.downscale_factor),
+        lcevc_on_geometry: storage_config.lcevc.is_some(),
+        lcevc_on_sh: storage_config.lcevc.is_some(),
     };
 
     let meta_path = output_dir.join(META_FILE);
@@ -701,11 +754,20 @@ pub fn write_packed_raster_scene_dir_with_report(
             return Err("byte_split_deflate sh_rest storage is not supported".into());
         }
         GroupStorageMode::CodedVideoAtlas => {
-            coded_groups.push(write_sh_rest_video_atlas(
-                packed,
-                output_dir,
-                storage_config.sh_rest_codec,
-            )?);
+            if storage_config.lcevc_enabled_for_sh() {
+                coded_groups.push(write_sh_rest_video_atlas_with_lcevc(
+                    packed,
+                    output_dir,
+                    storage_config.sh_rest_codec,
+                    storage_config.lcevc.as_ref().unwrap(),
+                )?);
+            } else {
+                coded_groups.push(write_sh_rest_video_atlas(
+                    packed,
+                    output_dir,
+                    storage_config.sh_rest_codec,
+                )?);
+            }
         }
     }
     write_u8_plane(output_dir.join(OPACITY_PAYLOAD_FILE), &opacity_payload)?;
@@ -775,13 +837,24 @@ pub fn read_packed_raster_scene_dir(
         )
         .into());
     }
-    let sh_rest = read_sh_rest_video_atlas(
-        input_dir,
-        metadata.width,
-        metadata.height,
-        metadata.num_gaussians as usize,
-        metadata.sh_rest_len as usize,
-    )?;
+    let sh_rest = if metadata.lcevc_enabled {
+        read_sh_rest_lcevc(
+            input_dir,
+            metadata.width,
+            metadata.height,
+            metadata.num_gaussians as usize,
+            metadata.sh_rest_len as usize,
+            metadata.lcevc_downscale.unwrap_or(2),
+        )?
+    } else {
+        read_sh_rest_video_atlas(
+            input_dir,
+            metadata.width,
+            metadata.height,
+            metadata.num_gaussians as usize,
+            metadata.sh_rest_len as usize,
+        )?
+    };
     let opacity_payload = read_u8_blob(input_dir.join(OPACITY_PAYLOAD_FILE))?;
     let scale_payload = read_u8_blob(input_dir.join(SCALE_PAYLOAD_FILE))?;
     let rotation_payload = read_u8_blob(input_dir.join(ROTATION_PAYLOAD_FILE))?;
@@ -843,6 +916,115 @@ pub fn read_packed_raster_scene_dir(
             normals: metadata.normals_codec,
         }),
     })
+}
+
+fn read_sh_rest_lcevc(
+    input_dir: &Path,
+    width: u32,
+    height: u32,
+    gaussian_len: usize,
+    sh_rest_len: usize,
+    downscale: u32,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if sh_rest_len == 0 {
+        return Ok(Vec::new());
+    }
+
+    // --- READ FILES ---
+    let base_bytes = std::fs::read(input_dir.join("sh_rest_base.bin"))?;
+    let enhancement_bytes = std::fs::read(input_dir.join("sh_rest_lcevc.bin"))?;
+
+    // --- DECODE BASE ---
+    let base_frame = decode_base_video_frame_lecv(&base_bytes, width, height, downscale)?;
+
+    let upscaled = upscale_frame(&base_frame, downscale);
+
+    // --- DECODE RESIDUAL ---
+    let residual = decode_lcevc_residual(&enhancement_bytes, upscaled.width, upscaled.height);
+
+    // --- RECONSTRUCT ---
+    let reconstructed = apply_residual(&upscaled, &residual);
+
+    // --- CONVERT FRAME → PAYLOAD (u16 packed) ---
+    let plane_len = (width as usize) * (height as usize);
+    let mut payload = vec![0u8; gaussian_len * sh_rest_len * std::mem::size_of::<u16>()];
+
+    // ⚠️ currently only 1 channel encoded
+    for gaussian_idx in 0..gaussian_len {
+        let v = reconstructed.data[gaussian_idx];
+
+        // clamp + convert back to u16
+        let quant = (v.clamp(0.0, 1.0) * 65535.0).round() as u16;
+        let bytes = quant.to_le_bytes();
+
+        let offset = gaussian_idx * std::mem::size_of::<u16>();
+        payload[offset] = bytes[0];
+        payload[offset + 1] = bytes[1];
+    }
+
+    Ok(payload)
+}
+
+fn decode_base_video_frame_lecv(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+    downscale: u32,
+) -> Result<video::frame::Frame, Box<dyn std::error::Error>> {
+    // TEMP: raw f32 decode (must match encoder!)
+    let mut data = Vec::new();
+
+    for chunk in bytes.chunks_exact(4) {
+        data.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+
+    let w = (width / downscale) as usize;
+    let h = (height / downscale) as usize;
+
+    if data.len() != w * h {
+        return Err("Base frame size mismatch".into());
+    }
+
+    Ok(Frame {
+        width: w,
+        height: h,
+        data,
+    })
+}
+
+fn frame_to_sh_rest(
+    frame: video::frame::Frame,
+    sh_rest_len: usize,
+    width: usize,
+    height: usize,
+) -> Vec<Vec<f32>> {
+    let plane_len = width * height;
+
+    let mut sh_rest = vec![vec![0.0f32; plane_len]; sh_rest_len];
+
+    // 🚨 IMPORTANT: right now we only filled channel 0 during encoding
+    for i in 0..plane_len {
+        sh_rest[0][i] = frame.data[i];
+    }
+
+    sh_rest
+}
+
+fn decode_base_video_frame(
+    bytes: &[u8],
+) -> Result<video::frame::Frame, Box<dyn std::error::Error>> {
+    // TEMP: fake decoder (must match your encoder)
+
+    // If you're using a real codec, call it here.
+    // For now assume raw f32 dump:
+
+    let mut data = Vec::new();
+    for chunk in bytes.chunks_exact(4) {
+        data.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+
+    // ⚠️ You MUST know dimensions — store them if needed
+    Err("decode_base_video_frame not implemented properly".into())
 }
 
 fn gaussians_from_aux_streams(packed: &PackedRasterScene) -> Vec<Gaussian> {
@@ -1540,6 +1722,32 @@ pub fn recombine_bytes_to_u16(hi: &[u8], lo: &[u8]) -> Vec<u16> {
         .collect()
 }
 
+fn build_sh_rest_frame(packed: &PackedRasterScene) -> Frame {
+    let width = packed.width as usize;
+    let height = packed.height as usize;
+
+    let plane_len = width * height;
+
+    let mut frame = Frame::new(width, height);
+
+    // SH rest payload stores u16 values packed as bytes
+    let payload = &packed.sh_rest_payload;
+
+    // safety clamp
+    let count = (payload.len() / 2).min(plane_len);
+
+    for i in 0..count {
+        let b0 = payload[2 * i];
+        let b1 = payload[2 * i + 1];
+
+        let v = u16::from_le_bytes([b0, b1]) as f32 / 65535.0;
+
+        frame.data[i] = v;
+    }
+
+    frame
+}
+
 fn write_sh_rest_video_atlas(
     packed: &PackedRasterScene,
     output_dir: &Path,
@@ -1580,6 +1788,36 @@ fn write_sh_rest_video_atlas(
         "sh_rest",
         codec_config,
     )
+}
+
+pub fn write_sh_rest_video_atlas_with_lcevc(
+    packed: &PackedRasterScene,
+    output_dir: &Path,
+    codec_config: ShRestVideoAtlasCodecConfig,
+    lcevc: &LcevcConfig,
+) -> Result<CodedGroupTiming, Box<dyn std::error::Error>> {
+    let full = build_sh_rest_frame(packed);
+
+    let down = downscale_frame(&full, lcevc.downscale_factor);
+
+    // reuse your existing encoder
+    let base_bitstream = encode_base_video_frame(&down, codec_config)?;
+
+    let base_decoded = decode_base_video_frame(&base_bitstream)?;
+    let upscaled = upscale_frame(&base_decoded, lcevc.downscale_factor);
+
+    let residual = compute_residual(&full, &upscaled);
+
+    let enhancement = encode_lcevc_residual(&residual);
+
+    std::fs::write(output_dir.join("sh_rest_base.bin"), base_bitstream)?;
+    std::fs::write(output_dir.join("sh_rest_lcevc.bin"), enhancement)?;
+
+    Ok(CodedGroupTiming {
+        name: "sh_rest_lcevc".to_string(),
+        duration: std::time::Duration::ZERO,
+        bytes: 0,
+    })
 }
 
 pub fn write_sh_rest_video_atlas_streams(

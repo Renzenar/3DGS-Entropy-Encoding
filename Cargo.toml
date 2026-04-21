@@ -5,6 +5,8 @@ members = [
 #    "crates/gaussian_types",
 #    "crates/rans_coding",
 #    "crates/deflate_coder",
+#    "crates/lcevc",
+#    "crates/video",
     "crates/*",
     "pipeline/*", 
 ]

@@ -8,5 +8,7 @@ bincode = "1"
 deflate_coder = { path = "../../crates/deflate_coder" }
 gaussian_parser = { path = "../../crates/gaussian_parser" }
 gaussian_packing = { path = "../../crates/gaussian_packing" }
+lcevc = { path = "../../crates/lcevc" }
+video = { path = "../../crates/video" }
 gaussian_types = { workspace = true }
 indicatif = "0.17"
