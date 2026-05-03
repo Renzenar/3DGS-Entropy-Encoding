@@ -1,7 +1,8 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::Path};
 
 use gaussian_packing::{
-    measure_packed_raster_scene_dir, read_packed_raster_scene_dir, sh_rest_payload_stats, unpack_raster_to_scene, write_scene_to_ply,
+    LcevcMetadata, measure_packed_raster_scene_dir, read_packed_raster_scene_dir,
+    sh_rest_payload_stats, unpack_raster_to_scene, write_scene_to_ply,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,16 +26,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "SH rest payload: raw_bytes={} coded_bytes={} storage={}",
         sh_rest_stats.raw_bytes, coded_summary.sh_rest_bytes, sh_rest_stats.storage
     );
+
+    let residual_bytes = measure_residual_bytes(Path::new(&input_dir));
+
+    println!("Residual Bytes: {}", residual_bytes);
+    let true_total = coded_summary.total_coded_bytes + residual_bytes;
+
+    println!("True total bytes: {}", true_total);
+    println!(
+        "True compression ratio: {:.4}",
+        output_ply_size as f64 / true_total as f64
+    );
     let coverage = coverage_from_packed(&packed);
     print_stream_coverage_block("vpcc_decoder", &coverage, &coverage, &coverage);
 
     Ok(())
 }
 
+fn measure_residual_bytes(dir: &Path) -> u64 {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.to_string_lossy().contains("sh_rest_residual_") {
+                Some(std::fs::metadata(path).ok()?.len())
+            } else {
+                None
+            }
+        })
+        .sum()
+}
+
 fn coverage_from_packed(packed: &gaussian_packing::PackedRasterScene) -> Vec<String> {
     let sh_rest_len = packed.sh_rest_len as usize;
     let normals_present = packed.normals_present;
-    let mut streams = vec!["xyz_x".to_string(), "xyz_y".to_string(), "xyz_z".to_string()];
+    let mut streams = vec![
+        "xyz_x".to_string(),
+        "xyz_y".to_string(),
+        "xyz_z".to_string(),
+    ];
     if normals_present {
         streams.extend(
             ["normals_x", "normals_y", "normals_z"]
@@ -42,20 +72,17 @@ fn coverage_from_packed(packed: &gaussian_packing::PackedRasterScene) -> Vec<Str
                 .map(String::from),
         );
     }
-    streams.extend(["sh_dc_r", "sh_dc_g", "sh_dc_b"].into_iter().map(String::from));
+    streams.extend(
+        ["sh_dc_r", "sh_dc_g", "sh_dc_b"]
+            .into_iter()
+            .map(String::from),
+    );
     for i in 0..sh_rest_len {
         streams.push(format!("sh_rest_{i}"));
     }
     streams.extend(
         [
-            "opacity",
-            "scale_x",
-            "scale_y",
-            "scale_z",
-            "rot_x",
-            "rot_y",
-            "rot_z",
-            "rot_w",
+            "opacity", "scale_x", "scale_y", "scale_z", "rot_x", "rot_y", "rot_z", "rot_w",
         ]
         .into_iter()
         .map(String::from),
@@ -79,12 +106,18 @@ fn print_stream_coverage_block(
         decoded_streams.len(),
         reconstructed_streams.len()
     );
-    println!("- missing packed: {}", format_stream_list(&missing_streams(schema_streams, packed_streams)));
+    println!(
+        "- missing packed: {}",
+        format_stream_list(&missing_streams(schema_streams, packed_streams))
+    );
     println!(
         "- missing compressed: {}",
         format_stream_list(&missing_streams(schema_streams, packed_streams))
     );
-    println!("- missing decoded: {}", format_stream_list(&missing_streams(schema_streams, decoded_streams)));
+    println!(
+        "- missing decoded: {}",
+        format_stream_list(&missing_streams(schema_streams, decoded_streams))
+    );
     println!(
         "- missing reconstructed: {}",
         format_stream_list(&missing_streams(schema_streams, reconstructed_streams))

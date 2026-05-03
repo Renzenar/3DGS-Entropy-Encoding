@@ -2,7 +2,7 @@ use deflate_coder::{compress_u16_vec_with_level, decompress_u16_vec};
 use gaussian_types::Gaussian;
 use serde::{Deserialize, Serialize};
 
-use crate::QuantParams;
+use crate::{LcevcConfig, LcevcMetadata, QuantParams};
 
 pub const OPACITY_PAYLOAD_FILE: &str = "opacity_payload.bin";
 pub const SCALE_PAYLOAD_FILE: &str = "scale_payload.bin";
@@ -165,6 +165,25 @@ impl Default for NormalsCodecConfig {
             quant_bits: 14,
             deflate_level: 1,
             keep_if_present: true,
+        }
+    }
+}
+
+impl Default for LcevcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            downscale_factor: 2,
+        }
+    }
+}
+
+impl Default for LcevcMetadata {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            downscale_factor: 2,
+            residual_count: 2,
         }
     }
 }

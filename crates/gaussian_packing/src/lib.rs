@@ -91,6 +91,12 @@ impl GroupStorageMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LcevcConfig {
+    pub enabled: bool,
+    pub downscale_factor: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PackedRasterStorageConfig {
     pub geometry: GroupStorageMode,
     pub sh_dc: GroupStorageMode,
@@ -102,6 +108,7 @@ pub struct PackedRasterStorageConfig {
     pub geometry_codec: ShRestVideoAtlasCodecConfig,
     pub sh_dc_codec: ShRestVideoAtlasCodecConfig,
     pub sh_rest_codec: ShRestVideoAtlasCodecConfig,
+    pub lcevc: Option<LcevcConfig>,
 }
 
 impl PackedRasterStorageConfig {
@@ -149,6 +156,7 @@ impl PackedRasterStorageConfig {
             geometry_codec,
             sh_dc_codec,
             sh_rest_codec,
+            lcevc: Some(LcevcConfig::default()),
         }
     }
 }
@@ -236,6 +244,13 @@ pub struct ContainerWriteTimings {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LcevcMetadata {
+    pub enabled: bool,
+    pub downscale_factor: u32,
+    pub residual_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct PackedRasterMetadata {
     num_gaussians: u32,
     width: u32,
@@ -252,6 +267,7 @@ struct PackedRasterMetadata {
     sh_rest_quant: Vec<QuantParams>,
     geom_quant: [QuantParams; 3],
     sh_dc_quant: [QuantParams; 3],
+    lcevc: Option<LcevcMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -594,6 +610,7 @@ pub fn write_packed_raster_scene_dir(
             sh_rest_codec: ShRestVideoAtlasCodecConfig::from_quality_preset(
                 QualityPreset::Lossless,
             ),
+            lcevc: Some(LcevcConfig::default()),
         },
     )
 }
@@ -641,6 +658,7 @@ pub fn write_packed_raster_scene_dir_with_report(
         sh_rest_quant: packed.sh_rest_quant.clone(),
         geom_quant: packed.geom_quant,
         sh_dc_quant: packed.sh_dc_quant,
+        lcevc: Some(LcevcMetadata::default()),
     };
 
     let meta_path = output_dir.join(META_FILE);
@@ -701,11 +719,28 @@ pub fn write_packed_raster_scene_dir_with_report(
             return Err("byte_split_deflate sh_rest storage is not supported".into());
         }
         GroupStorageMode::CodedVideoAtlas => {
-            coded_groups.push(write_sh_rest_video_atlas(
-                packed,
-                output_dir,
-                storage_config.sh_rest_codec,
-            )?);
+            if let Some(lcevc) = &storage_config.lcevc {
+                if lcevc.enabled {
+                    coded_groups.push(write_sh_rest_video_atlas_with_lcevc(
+                        packed,
+                        output_dir,
+                        storage_config.sh_rest_codec,
+                        lcevc,
+                    )?);
+                } else {
+                    coded_groups.push(write_sh_rest_video_atlas(
+                        packed,
+                        output_dir,
+                        storage_config.sh_rest_codec,
+                    )?);
+                }
+            } else {
+                coded_groups.push(write_sh_rest_video_atlas(
+                    packed,
+                    output_dir,
+                    storage_config.sh_rest_codec,
+                )?);
+            }
         }
     }
     write_u8_plane(output_dir.join(OPACITY_PAYLOAD_FILE), &opacity_payload)?;
@@ -775,13 +810,50 @@ pub fn read_packed_raster_scene_dir(
         )
         .into());
     }
-    let sh_rest = read_sh_rest_video_atlas(
+    let (sh_width, sh_height) = if let Some(lcevc) = &metadata.lcevc {
+        if lcevc.enabled {
+            (
+                metadata.width / lcevc.downscale_factor,
+                metadata.height / lcevc.downscale_factor,
+            )
+        } else {
+            (metadata.width, metadata.height)
+        }
+    } else {
+        (metadata.width, metadata.height)
+    };
+    let base_planes = read_sh_rest_video_atlas(
         input_dir,
-        metadata.width,
-        metadata.height,
+        sh_width,
+        sh_height,
         metadata.num_gaussians as usize,
         metadata.sh_rest_len as usize,
     )?;
+
+    // 2. reconstruct (or not)
+    let full_planes = if let Some(lcevc) = &metadata.lcevc {
+        if lcevc.enabled {
+            reconstruct_sh_rest_with_lcevc(
+                &base_planes,
+                metadata.width,
+                metadata.height,
+                input_dir,
+                lcevc.downscale_factor,
+            )
+        } else {
+            base_planes
+        }
+    } else {
+        base_planes
+    };
+
+    // 3. repack planes → bytes
+    let sh_rest = repack_sh_rest_planes(
+        &full_planes,
+        metadata.num_gaussians as usize,
+        metadata.sh_rest_len as usize,
+    );
+
     let opacity_payload = read_u8_blob(input_dir.join(OPACITY_PAYLOAD_FILE))?;
     let scale_payload = read_u8_blob(input_dir.join(SCALE_PAYLOAD_FILE))?;
     let rotation_payload = read_u8_blob(input_dir.join(ROTATION_PAYLOAD_FILE))?;
@@ -843,6 +915,88 @@ pub fn read_packed_raster_scene_dir(
             normals: metadata.normals_codec,
         }),
     })
+}
+
+fn unpack_sh_rest_to_planes(
+    payload: &[u8],
+    gaussian_len: usize,
+    sh_rest_len: usize,
+    width: u32,
+    height: u32,
+) -> Vec<Vec<u16>> {
+    let mut planes = vec![vec![0u16; (width * height) as usize]; sh_rest_len];
+
+    for stream_idx in 0..sh_rest_len {
+        for gaussian_idx in 0..gaussian_len {
+            let offset = (stream_idx * gaussian_len + gaussian_idx) * 2;
+
+            let val = u16::from_le_bytes([payload[offset], payload[offset + 1]]);
+
+            planes[stream_idx][gaussian_idx] = val;
+        }
+    }
+
+    planes
+}
+
+fn repack_sh_rest_planes(planes: &[Vec<u16>], gaussian_len: usize, sh_rest_len: usize) -> Vec<u8> {
+    let mut output = vec![0u8; gaussian_len * sh_rest_len * 2];
+
+    for stream_idx in 0..sh_rest_len {
+        let plane = &planes[stream_idx];
+
+        for gaussian_idx in 0..gaussian_len {
+            let val = plane[gaussian_idx];
+
+            let offset = (stream_idx * gaussian_len + gaussian_idx) * 2;
+            let bytes = val.to_le_bytes();
+
+            output[offset] = bytes[0];
+            output[offset + 1] = bytes[1];
+        }
+    }
+
+    output
+}
+
+fn reconstruct_sh_rest_with_lcevc(
+    base_streams: &[Vec<u16>],
+    width: u32,
+    height: u32,
+    residual_dir: &Path,
+    downscale_factor: u32,
+) -> Vec<Vec<u16>> {
+    let mut reconstructed = Vec::new();
+
+    let base_width = width / downscale_factor;
+    let base_height = height / downscale_factor;
+
+    for (i, base_plane) in base_streams.iter().enumerate() {
+        // === 1. Read residual ===
+        let residual_path = residual_dir.join(format!("sh_rest_residual_{}.bin", i));
+        let bytes = std::fs::read(&residual_path)
+            .expect(&format!("Missing residual file {:?}", residual_path));
+
+        let residuals: Vec<i16> = bytes
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+
+        // === 2. Upscale base ===
+        let upscaled = upscale_frame(base_plane, base_width, base_height, width, height);
+
+        // === 3. Combine ===
+        let mut combined = vec![0u16; upscaled.len()];
+
+        for j in 0..combined.len() {
+            let val = upscaled[j] as i32 + residuals[j] as i32;
+            combined[j] = val.clamp(0, 65535) as u16;
+        }
+
+        reconstructed.push(combined);
+    }
+
+    reconstructed
 }
 
 fn gaussians_from_aux_streams(packed: &PackedRasterScene) -> Vec<Gaussian> {
@@ -1582,6 +1736,145 @@ fn write_sh_rest_video_atlas(
     )
 }
 
+fn write_sh_rest_video_atlas_with_lcevc(
+    packed: &PackedRasterScene,
+    output_dir: &Path,
+    codec_config: ShRestVideoAtlasCodecConfig,
+    lcevc: &LcevcConfig,
+) -> Result<CodedGroupWriteTiming, Box<dyn std::error::Error>> {
+    if packed.sh_rest_len == 0 {
+        std::fs::write(output_dir.join(SH_REST_HI_VIDEO_FILE), [])?;
+        std::fs::write(output_dir.join(SH_REST_LO_VIDEO_FILE), [])?;
+        return Ok(CodedGroupWriteTiming {
+            group_name: "sh_rest_lcevc".to_string(),
+            ffmpeg_encode: Duration::ZERO,
+            temp_file_io: Duration::ZERO,
+        });
+    }
+
+    // === 1. Build full-resolution atlas planes (same as original) ===
+    let streams = (0..packed.sh_rest_len as usize)
+        .map(|stream_idx| {
+            let gaussian_len = packed.num_gaussians as usize;
+            let mut plane = vec![0u16; (packed.width as usize) * (packed.height as usize)];
+            for gaussian_idx in 0..gaussian_len {
+                plane[gaussian_idx] = sh_rest_value_at(
+                    &packed.sh_rest_payload,
+                    stream_idx,
+                    gaussian_idx,
+                    gaussian_len,
+                );
+            }
+            plane
+        })
+        .collect::<Vec<_>>();
+
+    // === 2. Downscale (base layer) ===
+    let base_streams: Vec<Vec<u16>> = streams
+        .iter()
+        .map(|plane| downscale_frame(plane, packed.width, packed.height, lcevc.downscale_factor))
+        .collect();
+
+    let base_width = packed.width / lcevc.downscale_factor;
+    let base_height = packed.height / lcevc.downscale_factor;
+    let base_active_len = (base_height * base_width) as usize;
+
+    // === 3. Encode base video (reuse existing VPCC path) ===
+    let base_timing = write_multi_u16_video_atlas(
+        &base_streams,
+        base_width,
+        base_height,
+        base_active_len,
+        output_dir,
+        [SH_REST_HI_VIDEO_FILE, SH_REST_LO_VIDEO_FILE],
+        "sh_rest_base",
+        codec_config,
+    )?;
+
+    // === 4. Upscale base ===
+    let upscaled_streams: Vec<Vec<u16>> = base_streams
+        .iter()
+        .map(|plane| upscale_frame(plane, base_width, base_height, packed.width, packed.height))
+        .collect();
+
+    // === 5. Compute residuals ===
+    let residuals: Vec<Vec<i16>> = streams
+        .iter()
+        .zip(upscaled_streams.iter())
+        .map(|(full, up)| {
+            full.iter()
+                .zip(up.iter())
+                .map(|(f, u)| *f as i16 - *u as i16)
+                .collect()
+        })
+        .collect();
+
+    let residual_count = residuals.len();
+
+    // === 6. Store residuals (simple prototype: raw or compressed) ===
+    // You can later replace this with real LCEVC encoding
+    for (i, residual_plane) in residuals.iter().enumerate() {
+        let path = output_dir.join(format!("sh_rest_residual_{}.bin", i));
+        let bytes: Vec<u8> = residual_plane
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        std::fs::write(path, bytes)?;
+    }
+
+    Ok(CodedGroupWriteTiming {
+        group_name: "sh_rest_lcevc".to_string(),
+        ffmpeg_encode: base_timing.ffmpeg_encode,
+        temp_file_io: base_timing.temp_file_io,
+    })
+}
+
+fn downscale_frame(input: &[u16], width: u32, height: u32, factor: u32) -> Vec<u16> {
+    let new_w = width / factor;
+    let new_h = height / factor;
+    let mut output = vec![0u16; (new_w * new_h) as usize];
+
+    for y in 0..new_h {
+        for x in 0..new_w {
+            let mut sum = 0u32;
+            let mut count = 0;
+
+            for dy in 0..factor {
+                for dx in 0..factor {
+                    let src_x = x * factor + dx;
+                    let src_y = y * factor + dy;
+                    let idx = (src_y * width + src_x) as usize;
+                    sum += input[idx] as u32;
+                    count += 1;
+                }
+            }
+
+            output[(y * new_w + x) as usize] = (sum / count) as u16;
+        }
+    }
+
+    output
+}
+
+fn upscale_frame(input: &[u16], in_w: u32, in_h: u32, out_w: u32, out_h: u32) -> Vec<u16> {
+    let mut output = vec![0u16; (out_w * out_h) as usize];
+
+    let scale_x = in_w as f32 / out_w as f32;
+    let scale_y = in_h as f32 / out_h as f32;
+
+    for y in 0..out_h {
+        for x in 0..out_w {
+            let src_x = (x as f32 * scale_x).floor() as u32;
+            let src_y = (y as f32 * scale_y).floor() as u32;
+            let src_idx = (src_y * in_w + src_x) as usize;
+            let dst_idx = (y * out_w + x) as usize;
+            output[dst_idx] = input[src_idx];
+        }
+    }
+
+    output
+}
+
 pub fn write_sh_rest_video_atlas_streams(
     streams: &[Vec<u16>],
     width: u32,
@@ -1718,7 +2011,7 @@ fn read_sh_rest_video_atlas(
     height: u32,
     gaussian_len: usize,
     sh_rest_len: usize,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Vec<u16>>, Box<dyn std::error::Error>> {
     if sh_rest_len == 0 {
         return Ok(Vec::new());
     }
@@ -1730,16 +2023,18 @@ fn read_sh_rest_video_atlas(
         [SH_REST_HI_VIDEO_FILE, SH_REST_LO_VIDEO_FILE],
         "vpcc_sh_rest",
     )?;
-    let mut payload = vec![0u8; gaussian_len * sh_rest_len * std::mem::size_of::<u16>()];
-    for (stream_idx, plane) in planes.iter().enumerate() {
-        for gaussian_idx in 0..gaussian_len {
-            let bytes = plane[gaussian_idx].to_le_bytes();
-            let offset = (stream_idx * gaussian_len + gaussian_idx) * std::mem::size_of::<u16>();
-            payload[offset] = bytes[0];
-            payload[offset + 1] = bytes[1];
-        }
-    }
-    Ok(payload)
+
+    return Ok(planes);
+    // let mut payload = vec![0u8; gaussian_len * sh_rest_len * std::mem::size_of::<u16>()];
+    // for (stream_idx, plane) in planes.iter().enumerate() {
+    //     for gaussian_idx in 0..gaussian_len {
+    //         let bytes = plane[gaussian_idx].to_le_bytes();
+    //         let offset = (stream_idx * gaussian_len + gaussian_idx) * std::mem::size_of::<u16>();
+    //         payload[offset] = bytes[0];
+    //         payload[offset + 1] = bytes[1];
+    //     }
+    // }
+    // Ok(payload)
 }
 
 fn write_u16_video_atlas(

@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use gaussian_packing::{
-    GroupStorageMode, PackRasterTimings, PackedContainerByteSummary, PackedRasterStorageConfig,
-    ShRestPackTimings, write_byte_split_planes_dir, write_debug_preview_pngs,
-    write_packed_raster_scene_dir_with_report, write_scene_to_ply,
+    GroupStorageMode, LcevcConfig, PackRasterTimings, PackedContainerByteSummary,
+    PackedRasterStorageConfig, ShRestPackTimings, write_byte_split_planes_dir,
+    write_debug_preview_pngs, write_packed_raster_scene_dir_with_report, write_scene_to_ply,
 };
 use gaussian_parser::load_gaussians_from_ply;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -42,6 +42,10 @@ pub fn run(config: CliConfig) -> Result<(), Box<dyn std::error::Error>> {
     let export_byte_split = std::env::var("VPCC_EXPORT_BYTE_SPLIT").ok().as_deref() == Some("1");
     let write_previews = std::env::var("VPCC_WRITE_PREVIEWS").ok().as_deref() == Some("1");
     let mut storage_config = PackedRasterStorageConfig::vpcc_video_atlas(config.quality);
+    storage_config.lcevc = Some(LcevcConfig {
+        enabled: true,
+        downscale_factor: 2,
+    });
     storage_config.sh_dc = sh_dc_storage_from_env(storage_config.sh_dc)?;
     let sh_rest_codec_config = storage_config.sh_rest_codec;
     let mut logger = RunLogger::new(
