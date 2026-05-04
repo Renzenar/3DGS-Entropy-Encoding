@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sh_rest_stats.raw_bytes, coded_summary.sh_rest_bytes, sh_rest_stats.storage
     );
 
-    let residual_bytes = measure_residual_bytes(Path::new(&input_dir));
+    let residual_bytes = measure_lcevc_residual_bytes(Path::new(&input_dir));
 
     println!("Residual Bytes: {}", residual_bytes);
     let true_total = coded_summary.total_coded_bytes + residual_bytes;
@@ -41,6 +41,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_stream_coverage_block("vpcc_decoder", &coverage, &coverage, &coverage);
 
     Ok(())
+}
+
+pub fn measure_lcevc_residual_bytes(dir: &Path) -> u64 {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.extension()? == "zst" && path.to_string_lossy().contains("sh_rest_residual_") {
+                Some(std::fs::metadata(path).ok()?.len())
+            } else {
+                None
+            }
+        })
+        .sum()
 }
 
 fn measure_residual_bytes(dir: &Path) -> u64 {

@@ -966,37 +966,31 @@ fn reconstruct_sh_rest_with_lcevc(
     residual_dir: &Path,
     downscale_factor: u32,
 ) -> Vec<Vec<u16>> {
-    let mut reconstructed = Vec::new();
+    let plane_count = base_streams.len();
+
+    let residuals =
+        read_lcevc_residuals(residual_dir, plane_count).expect("failed to read residuals");
 
     let base_width = width / downscale_factor;
     let base_height = height / downscale_factor;
 
-    for (i, base_plane) in base_streams.iter().enumerate() {
-        // === 1. Read residual ===
-        let residual_path = residual_dir.join(format!("sh_rest_residual_{}.bin", i));
-        let bytes = std::fs::read(&residual_path)
-            .expect(&format!("Missing residual file {:?}", residual_path));
+    base_streams
+        .iter()
+        .zip(residuals.iter())
+        .map(|(base_plane, residual_plane)| {
+            let upscaled =
+                upscale_frame_bilinear(base_plane, base_width, base_height, width, height);
 
-        let residuals: Vec<i16> = bytes
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
-            .collect();
-
-        // === 2. Upscale base ===
-        let upscaled = upscale_frame(base_plane, base_width, base_height, width, height);
-
-        // === 3. Combine ===
-        let mut combined = vec![0u16; upscaled.len()];
-
-        for j in 0..combined.len() {
-            let val = upscaled[j] as i32 + residuals[j] as i32;
-            combined[j] = val.clamp(0, 65535) as u16;
-        }
-
-        reconstructed.push(combined);
-    }
-
-    reconstructed
+            upscaled
+                .iter()
+                .zip(residual_plane.iter())
+                .map(|(u, r)| {
+                    let val = *u as i32 + *r as i32;
+                    val.clamp(0, 65535) as u16
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn gaussians_from_aux_streams(packed: &PackedRasterScene) -> Vec<Gaussian> {
@@ -1794,7 +1788,9 @@ fn write_sh_rest_video_atlas_with_lcevc(
     // === 4. Upscale base ===
     let upscaled_streams: Vec<Vec<u16>> = base_streams
         .iter()
-        .map(|plane| upscale_frame(plane, base_width, base_height, packed.width, packed.height))
+        .map(|plane| {
+            upscale_frame_bilinear(plane, base_width, base_height, packed.width, packed.height)
+        })
         .collect();
 
     // === 5. Compute residuals ===
@@ -1813,20 +1809,64 @@ fn write_sh_rest_video_atlas_with_lcevc(
 
     // === 6. Store residuals (simple prototype: raw or compressed) ===
     // You can later replace this with real LCEVC encoding
-    for (i, residual_plane) in residuals.iter().enumerate() {
-        let path = output_dir.join(format!("sh_rest_residual_{}.bin", i));
-        let bytes: Vec<u8> = residual_plane
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
-        std::fs::write(path, bytes)?;
-    }
+    let residual_bytes = write_lcevc_residuals(&residuals, output_dir)?;
+    println!("Residual compressed bytes: {}", residual_bytes);
 
     Ok(CodedGroupWriteTiming {
         group_name: "sh_rest_lcevc".to_string(),
         ffmpeg_encode: base_timing.ffmpeg_encode,
         temp_file_io: base_timing.temp_file_io,
     })
+}
+
+use zstd::stream::encode_all;
+
+fn write_lcevc_residuals(
+    residuals: &[Vec<i16>],
+    output_dir: &Path,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let mut total_bytes = 0;
+
+    for (i, residual_plane) in residuals.iter().enumerate() {
+        let path = output_dir.join(format!("sh_rest_residual_{}.zst", i));
+
+        let raw_bytes: Vec<u8> = residual_plane
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+
+        let compressed = encode_all(&raw_bytes[..], 3)?;
+        total_bytes += compressed.len() as u64;
+
+        std::fs::write(path, compressed)?;
+    }
+
+    Ok(total_bytes)
+}
+
+use zstd::stream::decode_all;
+
+fn read_lcevc_residuals(
+    residual_dir: &Path,
+    plane_count: usize,
+) -> Result<Vec<Vec<i16>>, Box<dyn std::error::Error>> {
+    let mut residuals = Vec::with_capacity(plane_count);
+
+    for i in 0..plane_count {
+        let path = residual_dir.join(format!("sh_rest_residual_{}.zst", i));
+
+        let compressed = std::fs::read(path)?;
+        let bytes = decode_all(&compressed[..])?;
+
+        let plane: Vec<i16> = bytes
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+
+        residuals.push(plane);
+    }
+
+    Ok(residuals)
 }
 
 fn downscale_frame(input: &[u16], width: u32, height: u32, factor: u32) -> Vec<u16> {
@@ -1856,19 +1896,39 @@ fn downscale_frame(input: &[u16], width: u32, height: u32, factor: u32) -> Vec<u
     output
 }
 
-fn upscale_frame(input: &[u16], in_w: u32, in_h: u32, out_w: u32, out_h: u32) -> Vec<u16> {
+fn upscale_frame_bilinear(input: &[u16], in_w: u32, in_h: u32, out_w: u32, out_h: u32) -> Vec<u16> {
     let mut output = vec![0u16; (out_w * out_h) as usize];
 
-    let scale_x = in_w as f32 / out_w as f32;
-    let scale_y = in_h as f32 / out_h as f32;
+    let scale_x = (in_w - 1) as f32 / (out_w - 1) as f32;
+    let scale_y = (in_h - 1) as f32 / (out_h - 1) as f32;
 
     for y in 0..out_h {
         for x in 0..out_w {
-            let src_x = (x as f32 * scale_x).floor() as u32;
-            let src_y = (y as f32 * scale_y).floor() as u32;
-            let src_idx = (src_y * in_w + src_x) as usize;
-            let dst_idx = (y * out_w + x) as usize;
-            output[dst_idx] = input[src_idx];
+            let src_x = x as f32 * scale_x;
+            let src_y = y as f32 * scale_y;
+
+            let x0 = src_x.floor() as u32;
+            let y0 = src_y.floor() as u32;
+            let x1 = (x0 + 1).min(in_w - 1);
+            let y1 = (y0 + 1).min(in_h - 1);
+
+            let dx = src_x - x0 as f32;
+            let dy = src_y - y0 as f32;
+
+            let idx = |xx: u32, yy: u32| -> usize { (yy * in_w + xx) as usize };
+
+            let p00 = input[idx(x0, y0)] as f32;
+            let p10 = input[idx(x1, y0)] as f32;
+            let p01 = input[idx(x0, y1)] as f32;
+            let p11 = input[idx(x1, y1)] as f32;
+
+            // bilinear interpolation
+            let value = p00 * (1.0 - dx) * (1.0 - dy)
+                + p10 * dx * (1.0 - dy)
+                + p01 * (1.0 - dx) * dy
+                + p11 * dx * dy;
+
+            output[(y * out_w + x) as usize] = value.round().clamp(0.0, 65535.0) as u16;
         }
     }
 
